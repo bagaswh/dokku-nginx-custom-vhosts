@@ -24,7 +24,7 @@ fn-nginx-custom-copy-from-image() {
   echo "copy_from_image $IMAGE_NAME:$CONFIG_FILE_PATH $conf_dest_path"
 
   if [[ ! -f "$conf_dest_path" ]]; then
-    return
+    dokku_log_fail "nginx-custom-config-yaml file not found in image $IMAGE_NAME:$CONFIG_FILE_PATH"
   fi
 }
 
