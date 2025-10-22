@@ -104,11 +104,11 @@ fn-nginx-custom-fastcgi-cache-default-flags() {
 fn-nginx-custom-proxy-cache-default-key-zone-size() {
   declare desc="retrieves proxy cache key zone size from proxy-cache-default-key-zone-size property"
   declare APP="$1"
-  fn-get-property --app "$APP" --global "proxy-cache-key-zone-size"
+  fn-get-property --app "$APP" --global "proxy-cache-default-key-zone-size"
 }
 
 fn-nginx-custom-fastcgi-cache-default-key-zone-size() {
   declare desc="retrieves fastcgi cache key zone size from fastcgi-cache-default-key-zone-size property"
   declare APP="$1"
-  fn-get-property --app "$APP" --global "fastcgi-cache-key-zone-size"
+  fn-get-property --app "$APP" --global "fastcgi-cache-default-key-zone-size"
 }

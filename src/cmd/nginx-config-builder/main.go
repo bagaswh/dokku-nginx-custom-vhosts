@@ -184,12 +184,6 @@ upstream {{ $value.GeneratedUpstreamName }} {
 	return result.String(), upstreamResultingNames, nil
 }
 
-type mapConfig struct {
-	String   string `json:"string" yaml:"string"`
-	Variable string `json:"variable" yaml:"variable"`
-	Lines    string `json:"lines" yaml:"lines"`
-}
-
 type mapResultingVariables map[string]string
 
 func buildMapConfig(appName string, config *file_config.Config) (string, mapResultingVariables, error) {
@@ -627,24 +621,12 @@ func main() {
 	}
 
 	nginxWorkingDirectory = path.Join(dokkuAppDataRootDirectory, fmt.Sprintf("%s-config", mustEnv("PROXY_NAME")))
-	nginxBackupConfigs := path.Join(nginxWorkingDirectory, "backups")
-	_ = nginxBackupConfigs
 	nginxConfigDirectory := path.Join(nginxWorkingDirectory, "conf.d")
-	upstreamsConfigPath := path.Join(nginxConfigDirectory, "upstreams.conf")
-	_ = upstreamsConfigPath
-	proxyCachesConfigPath := path.Join(nginxConfigDirectory, "proxy_caches.conf")
-	_ = proxyCachesConfigPath
-	fastcgiCachesConfigPath := path.Join(nginxConfigDirectory, "fastcgi_caches.conf")
-	_ = fastcgiCachesConfigPath
-	mapConfigPath := path.Join(nginxConfigDirectory, "maps.conf")
-	_ = mapConfigPath
 
-	cfg, rawCfg, err := file_config.ReadConfig(configFilePath)
+	cfg, _, err := file_config.ReadConfig(configFilePath)
 	if err != nil {
 		log.Fatalln("error parsing config file:", err)
 	}
-	_ = cfg
-	_ = rawCfg
 
 	appListeners := strings.Split(mustEnv("DOKKU_APP_LISTENERS"), " ")
 	proxyUpstreamPorts := strings.Split(mustEnv("PROXY_UPSTREAM_PORTS"), " ")
@@ -701,19 +683,16 @@ func main() {
 	if err != nil {
 		log.Fatalln("failed to build proxy cache config:", err)
 	}
-	_ = proxyCacheCfgStr
 
 	fastcgiCacheCfgStr, fastcgiCaches, err := buildFastcgiCacheConfig(appName, buildProxyCacheConfigData, cfg)
 	if err != nil {
 		log.Fatalln("failed to build fastcgi cache config:", err)
 	}
-	_ = fastcgiCacheCfgStr
 
 	mapCfgStr, mapResultingVariables, err := buildMapConfig(appName, cfg)
 	if err != nil {
 		log.Fatalln("failed to build map config:", err)
 	}
-	_ = mapCfgStr
 
 	locationConfigs, err := buildLocationConfig(appName, cfg, &locationConfigData{
 		upstreams:     upstreams,
@@ -725,19 +704,16 @@ func main() {
 		log.Fatalln("failed to build location config:", err)
 	}
 
-	// Get the latest release directory
 	latestReleaseDir, err := getCurrentConfigVersionDirectory(nginxConfigDirectory)
 	if err != nil {
 		log.Fatalln("failed to get latest release directory:", err)
 	}
 
-	// Get the previous version directory (if any)
 	previousDir, err := getPreviousVersionDirectory(nginxConfigDirectory)
 	if err != nil {
 		log.Fatalln("failed to get previous version directory:", err)
 	}
 
-	// Copy all configuration files to the latest release directory
 	configFiles := map[string]string{
 		"upstreams.conf":      upstreamCfgStr,
 		"proxy_caches.conf":   proxyCacheCfgStr,
@@ -745,29 +721,24 @@ func main() {
 		"maps.conf":           mapCfgStr,
 	}
 
-	// Copy location configs for each vhost
 	for vhost, locationConfig := range locationConfigs {
 		configFiles[fmt.Sprintf("vhosts/%s/vhost.conf", vhost)] = locationConfig
 	}
 
-	// Copy all config files to the release directory
 	for filename, content := range configFiles {
 		if err := copyConfigToRelease(content, latestReleaseDir, filename); err != nil {
 			log.Fatalln("failed to copy config file:", err)
 		}
 	}
 
-	// Update the current symlink to point to the new release
 	if err := updateCurrentSymlink(nginxConfigDirectory, latestReleaseDir); err != nil {
 		log.Fatalln("failed to update current symlink:", err)
 	}
 
-	// Test nginx configuration
 	if !withoutNginxTest {
 		if err := testNginxConfig(nginxTestCommand); err != nil {
 			log.Printf("nginx config test failed, rolling back: %v", err)
 
-			// Rollback to previous version
 			if rollbackErr := rollbackToPrevious(nginxConfigDirectory, previousDir); rollbackErr != nil {
 				log.Fatalln("failed to rollback to previous version:", rollbackErr)
 			}
@@ -775,6 +746,5 @@ func main() {
 			log.Fatalln("nginx config test failed, rolled back to previous version:", err)
 		}
 	}
-
 	log.Println("nginx configuration deployed successfully")
 }
