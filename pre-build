@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-set -eo pipefail
-[[ $DOKKU_TRACE ]] && set -x
-source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
 _DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
 source "$_DIR/config"
 source "$_DIR/functions"
+source "$_DIR/internal-functions"
+set -eo pipefail
+[[ $DOKKU_TRACE ]] && set -x
 
 trigger-nginx-custom-pre-build() {
   declare desc="${PROXY_NAME} pre-build plugin trigger. Performs checks and stuffs."
