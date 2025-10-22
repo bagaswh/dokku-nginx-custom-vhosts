@@ -14,7 +14,7 @@ trigger-nginx-custom-proxy-build-config() {
   echo "Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
 
   if [[ "$(get_app_proxy_type "$APP")" != "$PROXY_NAME" ]]; then
-    echo "Quitting"
+    echo "[trigger-nginx-custom-proxy-build-config] Quitting"
     return
   fi
   
