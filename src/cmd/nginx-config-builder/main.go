@@ -252,7 +252,7 @@ func buildProxyCacheConfig(appName string, buildProxyCacheCfgData buildProxyCach
 	cfgStr := ""
 
 	for _, cache := range config.ProxyCaches {
-		cacheName := fmt.Sprintf("%s_%s", appName, cache.Name)
+		cacheName := fmt.Sprintf("proxy_%s_%s", appName, cache.Name)
 		cachePath := cache.CachePath
 		if cachePath == "" {
 			if cache.InMem {
@@ -306,7 +306,7 @@ func buildFastcgiCacheConfig(appName string, buildProxyCacheCfgData buildProxyCa
 	cfgStr := ""
 
 	for _, cache := range config.FastcgiCaches {
-		cacheName := fmt.Sprintf("%s_%s", appName, cache.Name)
+		cacheName := fmt.Sprintf("fastcgi_%s_%s", appName, cache.Name)
 		cachePath := cache.CachePath
 		if cachePath == "" {
 			if cache.InMem {
