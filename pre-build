@@ -7,13 +7,13 @@ source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
 source "$_DIR/config"
 source "$_DIR/functions"
 
-trigger-nginx-custom-pre-release-builder() {
-  declare desc="${PROXY_NAME} pre-release-builder plugin trigger. Performs checks and stuffs."
-  declare trigger="nginx_custom_pre_release_builder"
+trigger-nginx-custom-pre-build() {
+  declare desc="${PROXY_NAME} pre-build plugin trigger. Performs checks and stuffs."
+  declare trigger="nginx_custom_pre_build"
   declare APP="$1"
   local HAS_NETWORK_CONFIG
 
-  echo "[pre-release-builder] Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
+  echo "[pre-build] Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
 
   proxy_cache_on_disk_root_path=$(fn-nginx-custom-proxy-cache-on-disk-root-path "$APP")
   if [[ -z "$proxy_cache_on_disk_root_path" ]]; then
@@ -47,4 +47,4 @@ trigger-nginx-custom-pre-release-builder() {
 
 }
 
-trigger-nginx-custom-pre-release-builder "$@"
+trigger-nginx-custom-pre-build "$@"
