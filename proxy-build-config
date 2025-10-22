@@ -10,6 +10,13 @@ trigger-nginx-custom-proxy-build-config() {
   declare desc="build nginx config to proxy app containers from command line"
   declare trigger="proxy-build-config"
   declare APP="$1"
+
+  echo "Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
+
+  if [[ "$(get_app_proxy_type "$APP")" != "$PROXY_NAME" ]]; then
+    echo "Quitting"
+    return
+  fi
   
   nginx_build_config "$APP"
 }

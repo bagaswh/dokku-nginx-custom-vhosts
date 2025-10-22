@@ -13,6 +13,14 @@ trigger-nginx-custom-pre-release-builder() {
   declare APP="$1"
   local HAS_NETWORK_CONFIG
 
+  echo "Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
+
+  if [[ "$(get_app_proxy_type "$APP")" != "$PROXY_NAME" ]]; then
+    echo "Quitting"
+    return
+  fi
+
+
   proxy_cache_on_disk_root_path=$(fn-nginx-custom-proxy-cache-on-disk-root-path "$APP")
   if [[ -z "$proxy_cache_on_disk_root_path" ]]; then
     dokku_log_fail "proxy-cache-on-disk-root-path is not set. Please set it to a valid path."
