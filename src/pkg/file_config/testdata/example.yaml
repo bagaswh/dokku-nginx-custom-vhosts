@@ -56,16 +56,16 @@ upstreams:
         flags: {}
 
 maps:
-  - variable: region
-    string: $geoip_city_continent_code
-    lines: |
-      default unknown;
-      NA north-america;
-      EU europe;
-      AS asia;
-      OC oceania;
-      AF africa;
-      SA south-america;
+  # - variable: region
+  #   string: $geoip_city_continent_code
+  #   lines: |
+  #     default unknown;
+  #     NA north-america;
+  #     EU europe;
+  #     AS asia;
+  #     OC oceania;
+  #     AF africa;
+  #     SA south-america;
 
   - variable: user_tier
     string: $http_x_api_key
@@ -128,7 +128,7 @@ vhosts:
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
           proxy_set_header X-Forwarded-Proto $scheme;
           proxy_set_header Host $http_host;
-          proxy_set_header X-Region {{ .map_variables.region }};
+          # proxy_set_header X-Region {{ .map_variables.region }};
           proxy_set_header X-User-Tier {{ .map_variables.user_tier }};
 
       - modifier: "^~"
