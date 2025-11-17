@@ -18,6 +18,7 @@ trigger-nginx-custom-proxy-build-config() {
     return
   fi
   
+  export DOKKU_APP_CONTAINER_WORKING_DIR_PATH="$(app_container_get_working_dir_path "$APP")"
   nginx_build_config "$APP"
 }
 

@@ -211,3 +211,23 @@ nginx_build_config() {
     -dokku-data-root-directory "${DATA_DIRECTORY}/app-${APP}" \
     -nginx-test-command "$nginx_test_command"
 }
+
+app_container_get_merged_dir_path() {
+    declare APP_NAME="$1"
+
+    container=$(docker ps -q --no-trunc --filter "label=org.label-schema.vendor=dokku" --filter "name=$APP_NAME.*.*" | head -n 1)
+    if [[ -z "$container" ]]; then
+        dokku_log_fail "Container not found for $APP"
+    fi
+
+    merged_dir_path="$(docker inspect --format='{{.GraphDriver.Data.MergedDir}}' "$container")"
+    echo "$merged_dir_path"
+}
+
+app_container_get_working_dir_path() {
+    declare APP_NAME="$1"
+
+    merged_dir_path=$(app_container_get_merged_dir_path "$APP_NAME")
+    image="$(docker inspect --format='{{.Image}}' "$container")"
+    working_dir_path="$merged_dir_path/$(docker image inspect --format "{{.Config.WorkingDir}}" $image)"
+}

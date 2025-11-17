@@ -249,6 +249,9 @@ func walkConfig(value *any, path string, cb func(string, *any) bool) error {
 }
 
 func buildGlobalTemplateData(config *Config, tmplData map[string]any) map[string]any {
+	tmplData["sys_vars"] = map[string]any{
+		"container_working_dir": os.Getenv("DOKKU_APP_CONTAINER_WORKING_DIR_PATH"),
+	}
 	tmplData["user_vars"] = config.UserVars
 	tmplData["upstreams"] = map[string]any{}
 	tmplData["map_variables"] = map[string]any{}
