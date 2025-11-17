@@ -238,4 +238,5 @@ app_container_get_working_dir_path() {
     merged_dir_path=$(app_container_get_merged_dir_path "$APP_NAME")
     image="$(docker inspect --format='{{.Image}}' "$container")"
     working_dir_path="$merged_dir_path/$(docker image inspect --format "{{.Config.WorkingDir}}" $image)"
+    echo "$working_dir_path"
 }
