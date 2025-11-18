@@ -5,14 +5,10 @@ package file_config
 import (
 	"errors"
 	"fmt"
-	"html/template"
 	"os"
 	"reflect"
-	"strconv"
 	"strings"
 
-	"dario.cat/mergo"
-	"github.com/gliderlabs/sigil"
 	"github.com/go-playground/validator/v10"
 	"github.com/jmespath/go-jmespath"
 	"gopkg.in/yaml.v3"
@@ -79,7 +75,7 @@ type ConfigVars map[string]any
 type Config struct {
 	Vhosts []VhostConfig `yaml:"vhosts" validate:"required,dive"`
 
-	SysVars  ConfigVars `yaml:"sys_vars" validate:"omitempty" json:"sys_vars"`
+	SysVars  ConfigVars
 	UserVars ConfigVars `yaml:"user_vars" validate:"omitempty" json:"vars"`
 
 	Upstreams     []UpstreamConfig `yaml:"upstreams" validate:"omitempty,dive" json:"upstreams"`
@@ -197,155 +193,6 @@ func ReadConfig(path string) (*Config, any, error) {
 }
 
 var ErrWalkSkip = errors.New("walk skipped")
-
-// walkConfig recursively walks through the configuration
-func walkConfig(value *any, path string, cb func(string, *any) bool) error {
-	if !cb(path, value) {
-		return ErrWalkSkip
-	}
-
-	switch v := (*value).(type) {
-	case map[string]interface{}:
-
-		for key, val := range v {
-			nodePath := key
-			if path != "" {
-				nodePath = path + "." + key
-			}
-
-			switch val := val.(type) {
-			case string, bool, float64, int:
-				actualVal := v[key]
-				if !cb(nodePath, &actualVal) {
-					return ErrWalkSkip
-				}
-				v[key] = actualVal
-			default:
-				if err := walkConfig(&val, nodePath, cb); err != nil {
-					return err
-				}
-			}
-		}
-
-	case []any:
-		for i, item := range v {
-			elemPath := fmt.Sprintf("%s[%d]", path, i)
-
-			switch val := item.(type) {
-			case string, bool, float64, int:
-				actualVal := v[i]
-				if !cb(elemPath, &actualVal) {
-					return ErrWalkSkip
-				}
-				v[i] = actualVal
-			default:
-				if err := walkConfig(&val, elemPath, cb); err != nil {
-					return err
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func buildGlobalTemplateData(config *Config, tmplData map[string]any) map[string]any {
-	tmplData["sys_vars"] = config.SysVars
-	tmplData["user_vars"] = config.UserVars
-	tmplData["upstreams"] = map[string]any{}
-	tmplData["map_variables"] = map[string]any{}
-	tmplData["proxy_caches"] = map[string]any{}
-	tmplData["fastcgi_caches"] = map[string]any{}
-	tmplData["named_locations"] = map[string]any{}
-	tmplData["proxy_caches"] = map[string]any{}
-	tmplData["fastcgi_caches"] = map[string]any{}
-	tmplData["named_locations"] = map[string]any{}
-
-	for _, upstream := range config.Upstreams {
-		(tmplData["upstreams"].(map[string]any))[upstream.Name] = upstream.Name
-	}
-
-	for _, mapVar := range config.Maps {
-		(tmplData["map_variables"].(map[string]any))[mapVar.Variable] = mapVar.Variable
-	}
-
-	for _, proxyCache := range config.ProxyCaches {
-		(tmplData["proxy_caches"].(map[string]any))[proxyCache.Name] = proxyCache.Name
-	}
-
-	for _, fastcgiCache := range config.FastcgiCaches {
-		(tmplData["fastcgi_caches"].(map[string]any))[fastcgiCache.Name] = fastcgiCache.Name
-	}
-
-	return tmplData
-}
-
-func buildVhostTemplateData(vhost *VhostConfig, tmplData map[string]any) map[string]any {
-	if _, ok := tmplData["variables"]; !ok {
-		tmplData["variables"] = map[string]any{}
-	}
-	for _, variable := range vhost.Variables {
-		(tmplData["variables"].(map[string]any))[variable.Name] = variable.Name
-	}
-
-	if _, ok := tmplData["named_locations"]; !ok {
-		tmplData["named_locations"] = map[string]any{}
-	}
-	for _, location := range vhost.Locations {
-		if location.Named == "" {
-			continue
-		}
-		(tmplData["named_locations"].(map[string]any))[location.Named] = location.Named
-	}
-
-	return tmplData
-}
-
-func ResolveConfigReferences(config *Config, rawConfig any, data any, funcMap template.FuncMap) (*Config, any, error) {
-	var walkErr error
-
-	vhostScopedDataKeys := []string{"variables", "named_locations"}
-	tmplData := buildGlobalTemplateData(config, make(map[string]any))
-	if err := mergo.Map(&tmplData, data); err != nil {
-		return nil, nil, err
-	}
-	prevVhostIndex := -1
-
-	walkConfig(&rawConfig, "", func(path string, value *any) bool {
-
-		if strings.HasPrefix(path, "vhosts[") {
-			vhostIndex, _ := strconv.Atoi(path[strings.Index(path, "[")+1 : strings.Index(path, "]")])
-
-			if vhostIndex != prevVhostIndex {
-				// clear vhost scoped data
-				for _, k := range vhostScopedDataKeys {
-					delete(tmplData, k)
-				}
-				tmplData = buildVhostTemplateData(&config.Vhosts[vhostIndex], tmplData)
-			}
-
-			prevVhostIndex = vhostIndex
-		} else {
-			for _, k := range vhostScopedDataKeys {
-				delete(tmplData, k)
-			}
-		}
-
-		switch v := (*value).(type) {
-		case string:
-			result, err := sigil.Execute([]byte(v), tmplData, "template")
-			if err != nil {
-				walkErr = fmt.Errorf("failed to parse template: %w", err)
-				return false
-			}
-			*value = result.String()
-		}
-
-		return true
-	})
-
-	return config, rawConfig, walkErr
-}
 
 func QueryConfig(data interface{}, query string) (interface{}, error) {
 	return jmespath.Search(query, data)

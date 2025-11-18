@@ -631,6 +631,10 @@ func main() {
 		log.Fatalln("error parsing config file:", err)
 	}
 
+	cfg.SysVars = file_config.ConfigVars{
+		"container_working_dir": os.Getenv("DOKKU_APP_CONTAINER_WORKING_DIR_PATH"),
+	}
+
 	appListeners := strings.Split(mustEnv("DOKKU_APP_LISTENERS"), " ")
 	proxyUpstreamPorts := strings.Split(mustEnv("PROXY_UPSTREAM_PORTS"), " ")
 
