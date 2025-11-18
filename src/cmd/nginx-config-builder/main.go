@@ -152,7 +152,7 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 				if uc.Servers[i].FlagsString != "" {
 					uc.Servers[i].FlagsString += " "
 				}
-				flagStringTemplated, err := sigil.Execute([]byte(flagString), map[string]any{"vars": config.UserVars}, "flag_string")
+				flagStringTemplated, err := sigil.Execute([]byte(flagString), map[string]any{"vars": config.UserVars, "sys_vars": config.SysVars}, "flag_string")
 				if err != nil {
 					return "", nil, fmt.Errorf("failed to parse template: %w", err)
 				}
@@ -172,6 +172,7 @@ upstream {{ $value.GeneratedUpstreamName }} {
 	dataRaw := map[string]any{
 		"upstreamConfigs": upstreamConfigs,
 		"vars":            config.UserVars,
+		"sys_vars":        config.SysVars,
 	}
 
 	fmt.Println(upstreamConfigs)
@@ -201,12 +202,12 @@ func buildMapConfig(appName string, config *file_config.Config) (string, mapResu
 	for _, mapVar := range config.Maps {
 		variableName := fmt.Sprintf("%s_%s", appName, mapVar.Variable)
 
-		linesOut, err := sigil.Execute([]byte(mapVar.Lines), map[string]any{"vars": config.UserVars}, "map_lines")
+		linesOut, err := sigil.Execute([]byte(mapVar.Lines), map[string]any{"vars": config.UserVars, "sys_vars": config.SysVars}, "map_lines")
 		if err != nil {
 			return "", nil, fmt.Errorf("failed to parse template: %w", err)
 		}
 
-		stringOut, err := sigil.Execute([]byte(mapVar.String), map[string]any{"vars": config.UserVars}, "map_string")
+		stringOut, err := sigil.Execute([]byte(mapVar.String), map[string]any{"vars": config.UserVars, "sys_vars": config.SysVars}, "map_string")
 		if err != nil {
 			return "", nil, fmt.Errorf("failed to parse template: %w", err)
 		}
@@ -283,7 +284,7 @@ func buildProxyCacheConfig(appName string, buildProxyCacheCfgData buildProxyCach
 			if flagStr != "" {
 				flagStr = flagStr + " "
 			}
-			tmplOut, err := sigil.Execute([]byte(str), map[string]any{"vars": config.UserVars}, "proxy_cache_flag_string")
+			tmplOut, err := sigil.Execute([]byte(str), map[string]any{"vars": config.UserVars, "sys_vars": config.SysVars}, "proxy_cache_flag_string")
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to parse template: %w", err)
 			}
@@ -337,7 +338,7 @@ func buildFastcgiCacheConfig(appName string, buildProxyCacheCfgData buildProxyCa
 			if flagStr != "" {
 				flagStr = flagStr + " "
 			}
-			tmplOut, err := sigil.Execute([]byte(str), map[string]any{"vars": config.UserVars}, "fastcgi_cache_flag_string")
+			tmplOut, err := sigil.Execute([]byte(str), map[string]any{"vars": config.UserVars, "sys_vars": config.SysVars}, "fastcgi_cache_flag_string")
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to parse template: %w", err)
 			}
@@ -386,6 +387,7 @@ func buildLocationConfig(appName string, config *file_config.Config, data *locat
 		tmplData := map[string]any{
 			"locationConfigs": make(map[string]any),
 			"vars":            config.UserVars,
+			"sys_vars":        config.SysVars,
 		}
 
 		namedLocations := make(map[string]string)
@@ -403,6 +405,7 @@ func buildLocationConfig(appName string, config *file_config.Config, data *locat
 			"variables":       variableNames,
 			"named_locations": namedLocations,
 			"vars":            config.UserVars,
+			"sys_vars":        config.SysVars,
 		}
 
 		for _, location := range vhost.Locations {

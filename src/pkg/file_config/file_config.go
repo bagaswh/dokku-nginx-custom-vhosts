@@ -79,6 +79,7 @@ type ConfigVars map[string]any
 type Config struct {
 	Vhosts []VhostConfig `yaml:"vhosts" validate:"required,dive"`
 
+	SysVars  ConfigVars `yaml:"sys_vars" validate:"omitempty" json:"sys_vars"`
 	UserVars ConfigVars `yaml:"user_vars" validate:"omitempty" json:"vars"`
 
 	Upstreams     []UpstreamConfig `yaml:"upstreams" validate:"omitempty,dive" json:"upstreams"`
@@ -249,9 +250,7 @@ func walkConfig(value *any, path string, cb func(string, *any) bool) error {
 }
 
 func buildGlobalTemplateData(config *Config, tmplData map[string]any) map[string]any {
-	tmplData["sys_vars"] = map[string]any{
-		"container_working_dir": os.Getenv("DOKKU_APP_CONTAINER_WORKING_DIR_PATH"),
-	}
+	tmplData["sys_vars"] = config.SysVars
 	tmplData["user_vars"] = config.UserVars
 	tmplData["upstreams"] = map[string]any{}
 	tmplData["map_variables"] = map[string]any{}
