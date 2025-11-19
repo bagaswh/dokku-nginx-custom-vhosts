@@ -409,9 +409,9 @@ func buildLocationConfig(appName string, config *file_config.Config, data *locat
 		}
 
 		for _, location := range vhost.Locations {
-			if location.Include != "" {
-				continue
-			}
+			// if location.Include != "" {
+			// 	continue
+			// }
 
 			modifierOut, err := sigil.Execute([]byte(location.Modifier), bodyTmplData, fmt.Sprintf("location_modifier_vhost_%s_uri_%s", vhost.ServerName, location.Uri))
 			if err != nil {
