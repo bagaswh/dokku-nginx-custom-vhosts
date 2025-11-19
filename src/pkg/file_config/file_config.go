@@ -35,11 +35,10 @@ type UpstreamConfig struct {
 }
 
 type LocationConfig struct {
-	Modifier string `yaml:"modifier" validate:"excluded_with=Include,excluded_with=Named,omitempty" json:"modifier"`
-	Uri      string `yaml:"uri" validate:"required_without=Include,excluded_with=Include" json:"uri"`
-	Named    string `yaml:"named" validate:"omitempty,required_without=Uri,excluded_with=Include" json:"named"`
-	Body     string `yaml:"body" validate:"required_without=Include" json:"body"`
-	Include  string `yaml:"include" validate:"omitempty" json:"include"`
+	Modifier string `yaml:"modifier" validate:"omitempty,excluded_without=Uri" json:"modifier"`
+	Uri      string `yaml:"uri" validate:"required_without=Named,excluded_with=Named" json:"uri"`
+	Named    string `yaml:"named" validate:"required_without=Uri,excluded_with=Uri,excluded_with=Modifier" json:"named"`
+	Body     string `yaml:"body" validate:"required" json:"body"`
 }
 
 type MapConfig struct {
