@@ -82,9 +82,9 @@ restart_nginx() {
 
   run_with_sudo="$(fn-get-property --app "$APP" --global "nginx-restart-command-run-with-sudo")"
   if [[ "$run_with_sudo" == "true" ]]; then
-    sudo "$command"
+    sudo $command
   else
-    "$command"
+    $command
   fi
 
 }
