@@ -10,7 +10,7 @@ source "$_DIR/internal-functions"
 
 get_nginx_location() {
   declare desc="check that nginx is at the expected location and return it"
-  fn-nginx-custom-nginx-custom-location
+  fn-nginx-custom-nginx-location
 }
 
 get_app_proxy_type() {
@@ -72,9 +72,9 @@ restart_nginx() {
   fi
 
   if fn-nginx-custom-uses-openresty; then
-    command="openresty -s reload"
+    command="/usr/bin/systemctl reload openresty"
   else 
-    command="nginx -s reload"
+    command="/usr/bin/systemctl reload nginx"
   fi
 
   run_with_sudo="$(fn-get-property --app "$APP" --global "nginx-restart-command-run-with-sudo")"
