@@ -19,6 +19,7 @@ trigger-nginx-custom-proxy-build-config() {
   fi
   
   nginx_build_config "$APP"
+  restart_nginx "$APP"
 }
 
 trigger-nginx-custom-proxy-build-config "$@"

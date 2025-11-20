@@ -63,10 +63,18 @@ validate_nginx() {
 
 restart_nginx() {
   declare desc="restart nginx for given distros"
-  local PROXY_ENABLED="$(plugn trigger proxy-is-enabled "$APP")"
-  local PROXY_TYPE="$(plugn trigger proxy-type "$APP")"
-  if [[ "$PROXY_ENABLED" == "true" ]] && [[ "$PROXY_TYPE" == "$PROXY_NAME" ]]; then
-    fn-nginx-custom-nginx-custom-init-cmd "reload"
+  declare APP="$1"
+
+  nginx_restart_command="$(fn-get-property --app "$APP" --global "nginx-restart-command")"
+  if [[ -n "$nginx_restart_command" ]]; then
+    eval "$nginx_restart_command"
+    return $?
+  fi
+
+  if fn-nginx-custom-uses-openresty; then
+    openresty -s reload
+  else 
+    nginx -s reload
   fi
 }
 
