@@ -72,9 +72,16 @@ restart_nginx() {
   fi
 
   if fn-nginx-custom-uses-openresty; then
-    openresty -s reload
+    command="openresty -s reload"
   else 
-    nginx -s reload
+    command="nginx -s reload"
+  fi
+
+  run_with_sudo="$(fn-get-property --app "$APP" --global "nginx-restart-command-run-with-sudo")"
+  if [[ "$run_with_sudo" == "true" ]]; then
+    sudo "$command"
+  else
+    "$command"
   fi
 }
 
