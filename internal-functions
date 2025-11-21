@@ -50,6 +50,17 @@ fn-get-property() {
   "$_DIR/nginx-property" --log-root "$(fn-nginx-custom-log-root)"  "$@"
 }
 
+fn-nginx-custom-add-header-mode() {
+  declare desc="retrieves add header mode from add-header-mode property"
+  declare APP="$1"
+  hdr_mode=$(fn-get-property --app "$APP" --global "add-header-mode")
+  if [[ -z "$hdr_mode" ]]; then
+    echo "add_header"
+  else
+    echo "$hdr_mode"
+  fi
+}
+
 fn-nginx-custom-config-file() {
   declare desc="retrieves config file path from config-file property"
   declare APP="$1"

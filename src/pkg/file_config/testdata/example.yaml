@@ -2,6 +2,20 @@ user_vars:
   proxy_cache_default: default-in-fs
   fail_timeout: 50s
 
+  some_common_headers:
+    X-User-Tier: premium
+    X-Region: EU
+
+  nginx_fe_paths:
+    - "= /"
+    - "/blog"
+    - "/get-blog"
+    - "/docs"
+    - "/pricing"
+    - "/contact-us"
+    - "/en"
+    - "/id"
+
 upstreams:
   - select_default: true
     default_servers_flags:
@@ -120,21 +134,27 @@ vhosts:
     server_name: api.example.com
     locations:
       - body: |
-          location /blublu {
-            return 200;
+          {{ range .vars.nginx_fe_paths }}
+          location {{ . }} {
+            try_files /dev/null {{ $.upstreams.default }};
           }
+          {{ end }}
 
       - modifier: ""
         uri: "/api/v1/"
         body: |
           proxy_cache {{ .proxy_caches.in_mem }};
-          proxy_pass http://{{ .upstreams.default }};
+          proxy_pass http://{{ $.upstreams.default }};
           proxy_set_header X-Real-IP $remote_addr;
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
           proxy_set_header X-Forwarded-Proto $scheme;
           proxy_set_header Host $http_host;
           # proxy_set_header X-Region {{ .map_variables.region }};
           proxy_set_header X-User-Tier {{ .map_variables.user_tier }};
+
+          {{- range $key, $value := $.vars.some_common_headers }}
+          {{ nginx_add_header $key $value -}}
+          {{ end -}}
 
       - modifier: "^~"
         uri: "/ws/"

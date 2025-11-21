@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -647,6 +648,22 @@ func main() {
 	cfg.SysVars = file_config.ConfigVars{
 		"container_working_dir": os.Getenv("DOKKU_APP_CONTAINER_WORKING_DIR_PATH"),
 	}
+
+	addHeaderMode := mustEnv("NGINX_ADD_HEADER_MODE")
+	allowedAddHeaderModes := []string{"add_header", "more_set_headers"}
+	if !slices.Contains(allowedAddHeaderModes, addHeaderMode) {
+		log.Fatalln("NGINX_ADD_HEADER_MODE must be one of:", allowedAddHeaderModes)
+	}
+
+	tmplFuncs := map[string]any{
+		"nginx_add_header": func(header string, value string) string {
+			if addHeaderMode == "add_header" {
+				return fmt.Sprintf("add_header %s %s always;", header, value)
+			}
+			return fmt.Sprintf("more_set_headers '%s: %s';", header, value)
+		},
+	}
+	sigil.Register(tmplFuncs)
 
 	appListeners := strings.Split(mustEnv("DOKKU_APP_LISTENERS"), " ")
 	proxyUpstreamPorts := strings.Split(mustEnv("PROXY_UPSTREAM_PORTS"), " ")
