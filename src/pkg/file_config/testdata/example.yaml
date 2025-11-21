@@ -119,6 +119,11 @@ vhosts:
   - existing: false
     server_name: api.example.com
     locations:
+      - body: |
+          location /blublu {
+            return 200;
+          }
+
       - modifier: ""
         uri: "/api/v1/"
         body: |
@@ -145,8 +150,6 @@ vhosts:
         body: |
           grpc_pass grpc://{{ .upstreams.grpc_backend }};
           grpc_set_header X-Real-IP $remote_addr;
-
-      - include: ".dokku/custom-locations.conf"
 
   - existing: true
     server_name: legacy-api.example.com

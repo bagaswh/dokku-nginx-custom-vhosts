@@ -366,11 +366,16 @@ type vhostToLocationConfigStringMap map[string]string
 func buildLocationConfig(appName string, config *file_config.Config, data *locationConfigData) (vhostToLocationConfigStringMap, error) {
 	locationConfigs := make(vhostToLocationConfigStringMap, 0)
 
-	tmplLocationBlockStr := `location {{ $.modifier }} {{ if $.named }}@{{ $.named }}{{ else }}{{ $.uri }}{{ end }} {
+	tmplLocationBlockStr := `{{- if or $.uri $.named -}}
+location {{ $.modifier }}{{ if $.named }}@{{ $.named }}{{ else }}{{ $.uri }}{{ end }} {
+{{- end -}}
 {{- range $line := $.bodyLines }}
-  {{ $line -}}
+  {{ $line }}
 {{- end }}
+{{- if or $.uri $.named }}
 }
+
+{{ end -}}
 `
 
 	for _, vhost := range config.Vhosts {
@@ -415,19 +420,19 @@ func buildLocationConfig(appName string, config *file_config.Config, data *locat
 
 			modifierOut, err := sigil.Execute([]byte(location.Modifier), bodyTmplData, fmt.Sprintf("location_modifier_vhost_%s_uri_%s", vhost.ServerName, location.Uri))
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse template: %w", err)
+				return nil, fmt.Errorf("failed to parse location.Modifier template: %w", err)
 			}
 			tmplData["modifier"] = modifierOut.String()
 
 			uriOut, err := sigil.Execute([]byte(location.Uri), bodyTmplData, fmt.Sprintf("location_uri_vhost_%s_uri_%s", vhost.ServerName, location.Uri))
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse template: %w", err)
+				return nil, fmt.Errorf("failed to parse location.Uri template: %w", err)
 			}
 			tmplData["uri"] = uriOut.String()
 
 			bodyOut, err := sigil.Execute([]byte(location.Body), bodyTmplData, fmt.Sprintf("location_body_vhost_%s_uri_%s", vhost.ServerName, location.Uri))
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse template: %w", err)
+				return nil, fmt.Errorf("failed to parse location.Body template: %w", err)
 			}
 			bodyLines := strings.Split(bodyOut.String(), "\n")
 			tmplData["bodyLines"] = bodyLines
@@ -440,7 +445,7 @@ func buildLocationConfig(appName string, config *file_config.Config, data *locat
 
 			locationOut, err := sigil.Execute([]byte(tmplLocationBlockStr), tmplData, fmt.Sprintf("location_block_vhost_%s_uri_%s", vhost.ServerName, location.Uri))
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse template: %w", err)
+				return nil, fmt.Errorf("failed to parse tmplLocationBlockStr template: %w", err)
 			}
 
 			if locationConfigStr != "" {
@@ -464,8 +469,16 @@ func getCurrentConfigVersionDirectory(nginxConfigDirectory string) (string, erro
 		return "", fmt.Errorf("failed to read nginx config directory: %w", err)
 	}
 
+	yyyymmdd := time.Now().Format("20060102")
+
+	sequence := 1
+	for _, file := range files {
+		if strings.HasPrefix(file, fmt.Sprintf("%s/release-%s.", nginxConfigDirectory, yyyymmdd)) {
+			sequence++
+		}
+	}
+
 	if len(files) == 0 {
-		yyyymmdd := time.Now().Format("20060102")
 		return fmt.Sprintf("%s/release-%s.1", nginxConfigDirectory, yyyymmdd), nil
 	}
 
