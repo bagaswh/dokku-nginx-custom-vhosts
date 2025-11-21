@@ -1,4 +1,6 @@
 user_vars:
+  root_dir: "{{ .sys_vars.container_working_dir }}/public"
+
   proxy_cache_default: default-in-fs
   fail_timeout: 50s
 
@@ -197,7 +199,7 @@ vhosts:
       - modifier: "^~"
         uri: "/assets/"
         body: |
-          alias "{{ .sys_vars.container_working_dir }}/assets/";
+          alias "{{ .vars.root_dir }}";
           proxy_cache {{ .proxy_caches.on_disk }};
           proxy_cache_use_stale error timeout http_500 http_502 http_503 http_504;
           proxy_cache_valid 200 24h;

@@ -612,6 +612,62 @@ func rollbackToPrevious(nginxConfigDirectory string, previousDir string) error {
 	return updateCurrentSymlink(nginxConfigDirectory, previousDir)
 }
 
+func resolveUserVars(userVars map[string]any, sysVars map[string]any) (map[string]any, error) {
+	resolvedUserVars := make(map[string]any)
+	for k, v := range userVars {
+		resolved, err := resolveValue(v, sysVars, fmt.Sprintf("user_var_%s", k))
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve user var %s: %w", k, err)
+		}
+		resolvedUserVars[k] = resolved
+	}
+	return resolvedUserVars, nil
+}
+
+func resolveValue(v any, sysVars map[string]any, context string) (any, error) {
+	if v == nil {
+		return nil, nil
+	}
+
+	switch val := v.(type) {
+	case string:
+		// Resolve string templates
+		resolved, err := sigil.Execute([]byte(val), sysVars, context)
+		if err != nil {
+			return nil, err
+		}
+		return resolved.String(), nil
+
+	case map[string]any:
+		// Recursively resolve nested maps
+		resolvedMap := make(map[string]any)
+		for k, nestedVal := range val {
+			resolved, err := resolveValue(nestedVal, sysVars, fmt.Sprintf("%s.%s", context, k))
+			if err != nil {
+				return nil, fmt.Errorf("in key %s: %w", k, err)
+			}
+			resolvedMap[k] = resolved
+		}
+		return resolvedMap, nil
+
+	case []any:
+		// Recursively resolve slices
+		resolvedSlice := make([]any, len(val))
+		for i, item := range val {
+			resolved, err := resolveValue(item, sysVars, fmt.Sprintf("%s[%d]", context, i))
+			if err != nil {
+				return nil, fmt.Errorf("at index %d: %w", i, err)
+			}
+			resolvedSlice[i] = resolved
+		}
+		return resolvedSlice, nil
+
+	default:
+		// Return other types as-is (int, bool, float, etc.)
+		return v, nil
+	}
+}
+
 func main() {
 
 	var appName string
@@ -648,6 +704,14 @@ func main() {
 	cfg.SysVars = file_config.ConfigVars{
 		"container_working_dir": os.Getenv("DOKKU_APP_CONTAINER_WORKING_DIR_PATH"),
 	}
+
+	userVars, err := resolveUserVars(cfg.UserVars, map[string]any{
+		"sys_vars": cfg.SysVars,
+	})
+	if err != nil {
+		log.Fatalln("error resolving user vars:", err)
+	}
+	cfg.UserVars = userVars
 
 	addHeaderMode := mustEnv("NGINX_ADD_HEADER_MODE")
 	allowedAddHeaderModes := []string{"add_header", "more_set_headers"}
