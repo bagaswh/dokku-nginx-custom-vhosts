@@ -146,7 +146,7 @@ vhosts:
         uri: "/api/v1/"
         body: |
           proxy_cache {{ .proxy_caches.in_mem }};
-          proxy_pass http://{{ $.upstreams.default }};
+          proxy_pass http://{{ index $.upstreams "default-5001" }};
           proxy_set_header X-Real-IP $remote_addr;
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
           proxy_set_header X-Forwarded-Proto $scheme;

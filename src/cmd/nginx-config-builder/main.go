@@ -840,11 +840,11 @@ func main() {
 		if err := testNginxConfig(nginxTestCommand); err != nil {
 			log.Printf("nginx config test failed, rolling back: %v", err)
 
-			if rollbackErr := rollbackToPrevious(nginxConfigDirectory, previousDir); rollbackErr != nil {
-				log.Fatalln("failed to rollback to previous version:", rollbackErr)
-			}
+			// if rollbackErr := rollbackToPrevious(nginxConfigDirectory, previousDir); rollbackErr != nil {
+			// 	log.Fatalln("failed to rollback to previous version:", rollbackErr)
+			// }
 
-			log.Fatalln("nginx config test failed, rolled back to previous version:", err)
+			log.Fatalln("nginx config test failed:", err)
 		}
 	}
 	log.Println("nginx configuration deployed successfully")
