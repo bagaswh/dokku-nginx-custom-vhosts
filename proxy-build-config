@@ -17,6 +17,8 @@ trigger-nginx-custom-proxy-build-config() {
     echo "[trigger-nginx-custom-proxy-build-config] Quitting"
     return
   fi
+
+  echo "DOKKU_LIB_ROOT: $DOKKU_LIB_ROOT"
   
   nginx_build_config "$APP"
   restart_nginx "$APP"

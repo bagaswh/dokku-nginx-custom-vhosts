@@ -83,6 +83,7 @@ nginx_build_config() {
     nginx_test_command="sudo openresty -t"
   fi
 
+  export DOKKU_APP_CONTAINER_LABELS="$(app_container_get_labels "$APP")"
   export DOKKU_APP_LISTENERS PROXY_PORT PROXY_PORT_MAP PROXY_UPSTREAM_PORTS
   export PROXY_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-proxy-cache-on-disk-root-path "$APP")"
   export PROXY_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-proxy-cache-in-mem-root-path "$APP")"
@@ -128,4 +129,11 @@ app_container_get_working_dir_path() {
     image="$(docker inspect --format='{{.Image}}' "$container")"
     working_dir_path="$merged_dir_path/$(docker image inspect --format "{{.Config.WorkingDir}}" $image)"
     echo "$working_dir_path"
+}
+
+app_container_get_labels() {
+    declare APP_NAME="$1"
+
+    container=$(app_container_get "$APP_NAME")
+    docker inspect --format='{{json .Config.Labels}}' "$container"
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"dokku-nginx-custom/src/pkg/file_config"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -701,8 +702,15 @@ func main() {
 		log.Fatalln("error parsing config file:", err)
 	}
 
+	containerLabels := make(map[string]any)
+	containerLabelsUnmarshalErr := json.Unmarshal([]byte(os.Getenv("DOKKU_APP_CONTAINER_LABELS")), &containerLabels)
+	if containerLabelsUnmarshalErr != nil {
+		log.Fatalln("error marshaling container labels:", err)
+	}
+
 	cfg.SysVars = file_config.ConfigVars{
 		"container_working_dir": os.Getenv("DOKKU_APP_CONTAINER_WORKING_DIR_PATH"),
+		"container_labels":      containerLabels,
 	}
 
 	userVars, err := resolveUserVars(cfg.UserVars, map[string]any{
