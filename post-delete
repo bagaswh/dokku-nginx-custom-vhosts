@@ -20,6 +20,9 @@ trigger-nginx-custom-core-post-delete() {
     return
   fi
 
+  echo SOPO AKU
+  whoami
+
   rm -rf "${DATA_DIRECTORY}/app-${APP}"
   nginx_test_command="sudo nginx -t"
   if fn-nginx-custom-uses-openresty; then
