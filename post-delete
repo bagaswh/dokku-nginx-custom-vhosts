@@ -9,7 +9,7 @@ source "$_DIR/functions"
 
 trigger-nginx-custom-core-post-delete() {
   declare desc="${PROXY_NAME} core-post-delete plugin trigger"
-  declare trigger="nginx_custom_post_delete"
+  declare trigger="nginx_custom_post_deploy"
   declare APP="$1"
   local HAS_NETWORK_CONFIG
 
@@ -20,7 +20,13 @@ trigger-nginx-custom-core-post-delete() {
     return
   fi
 
-  plugn trigger proxy-build-config "$APP"
+  rm -rf "${DATA_DIRECTORY}/app-${APP}"
+  nginx_test_command="sudo nginx -t"
+  if fn-nginx-custom-uses-openresty; then
+    nginx_test_command="sudo openresty -t"
+  fi
+  $nginx_test_command
+  restart_nginx "$APP"
 }
 
 trigger-nginx-custom-core-post-delete "$@"
