@@ -18,8 +18,6 @@ trigger-nginx-custom-proxy-build-config() {
     return
   fi
 
-  echo "DOKKU_LIB_ROOT: $DOKKU_LIB_ROOT"
-  
   nginx_build_config "$APP"
   restart_nginx "$APP"
 }

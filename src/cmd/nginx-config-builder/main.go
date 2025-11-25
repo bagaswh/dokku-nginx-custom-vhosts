@@ -711,6 +711,7 @@ func main() {
 	cfg.SysVars = file_config.ConfigVars{
 		"container_working_dir": os.Getenv("DOKKU_APP_CONTAINER_WORKING_DIR_PATH"),
 		"container_labels":      containerLabels,
+		"dokku_app_storage_dir": os.Getenv("DOKKU_APP_STORAGE_DIR"),
 	}
 
 	userVars, err := resolveUserVars(cfg.UserVars, map[string]any{

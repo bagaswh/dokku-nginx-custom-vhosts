@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 
 export PROXY_NAME="nginx-custom"
-export DATA_DIRECTORY="${DOKKU_LIB_ROOT}/data/$PROXY_NAME"
+export DATA_DIRECTORY="${DOKKU_LIB_ROOT}/data/${PROXY_NAME}"
+export DOKKU_STORAGE_DIR="${DOKKU_LIB_ROOT}/data/storage/"
