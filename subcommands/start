@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$_DIR/command-functions"
-
-set -eo pipefail
-[[ $DOKKU_TRACE ]] && set -x
-
-cmd-nginx-custom-start "$@"

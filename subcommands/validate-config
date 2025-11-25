@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-set -eo pipefail
-[[ $DOKKU_TRACE ]] && set -x
-source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
-_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$_DIR/command-functions"
-
-cmd-nginx-custom-validate-config "$@"
