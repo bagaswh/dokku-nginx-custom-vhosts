@@ -37,6 +37,8 @@ restart_nginx() {
   set -x
   trap "set +x" EXIT
 
+  echo SOPO AKU
+  whoami
   run_with_sudo="$(fn-get-property --app "$APP" --global "nginx-restart-command-run-with-sudo")"
   if [[ "$run_with_sudo" == "true" ]]; then
     sudo $command
