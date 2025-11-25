@@ -154,6 +154,8 @@ vhosts:
           # proxy_set_header X-Region {{ .map_variables.region }};
           proxy_set_header X-User-Tier {{ .map_variables.user_tier }};
 
+          {{ nginx_add_header "X-App-Name" (index $.sys_vars.container_labels "com.dokku.app-name") -}}
+
           {{- range $key, $value := $.vars.some_common_headers }}
           {{ nginx_add_header $key $value -}}
           {{ end -}}
