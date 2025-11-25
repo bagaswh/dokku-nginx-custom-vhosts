@@ -810,7 +810,7 @@ func main() {
 		log.Fatalln("failed to get latest release directory:", err)
 	}
 
-	previousDir, err := getPreviousVersionDirectory(nginxConfigDirectory)
+	_, err = getPreviousVersionDirectory(nginxConfigDirectory)
 	if err != nil {
 		log.Fatalln("failed to get previous version directory:", err)
 	}
