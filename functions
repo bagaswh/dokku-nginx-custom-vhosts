@@ -15,7 +15,9 @@ get_nginx_location() {
 
 get_app_proxy_type() {
   local APP="$1"
-  plugn trigger proxy-type "$APP"
+  type=$(plugn trigger proxy-type "$APP")
+  proxy_is_enabled=$(plugn trigger proxy-is-enabled "$APP")
+  echo "PROXY_IS_ENABLED: $proxy_is_enabled"
 }
 
 restart_nginx() {
