@@ -6,6 +6,9 @@ source "$_DIR/config"
 source "$_DIR/functions"
 source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
 
+# Trap any errors and exit with DOKKU_FAIL_EXIT_CODE
+trap 'exit ${DOKKU_FAIL_EXIT_CODE:-1}' ERR
+
 trigger-nginx-custom-proxy-build-config() {
   declare desc="build nginx config to proxy app containers from command line"
   declare trigger="proxy-build-config"
@@ -18,8 +21,8 @@ trigger-nginx-custom-proxy-build-config() {
     return
   fi
 
-  nginx_build_config "$APP"
-  restart_nginx "$APP"
+  nginx_build_config "$APP" || dokku_log_fail "nginx build config failed"
+  restart_nginx "$APP" || dokku_log_fail "nginx restart failed"
 }
 
 trigger-nginx-custom-proxy-build-config "$@"

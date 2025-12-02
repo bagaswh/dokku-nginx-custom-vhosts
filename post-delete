@@ -25,8 +25,8 @@ trigger-nginx-custom-core-post-delete() {
   if fn-nginx-custom-uses-openresty; then
     nginx_test_command="sudo openresty -t"
   fi
-  $nginx_test_command
-  restart_nginx "$APP"
+  $nginx_test_command || dokku_log_fail "nginx config test failed"
+  restart_nginx "$APP" || dokku_log_fail "nginx restart failed"
 }
 
 trigger-nginx-custom-core-post-delete "$@"
