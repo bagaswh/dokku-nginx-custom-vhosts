@@ -72,7 +72,8 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 		for _, listener := range data.AppListeners {
 			listenerSplit := strings.Split(listener, ":")
 			if len(listenerSplit) != 2 {
-				return "", nil, fmt.Errorf("failed to parse listener %s", listener)
+				fmt.Printf("[warn] failed to parse listener %s\n", listener)
+				continue
 			}
 			upstreamAddr := listenerSplit[0]
 			uc.Servers = append(uc.Servers, upstreamServer{
