@@ -739,8 +739,21 @@ func main() {
 	}
 	sigil.Register(tmplFuncs)
 
-	appListeners := strings.Split(mustEnv("DOKKU_APP_LISTENERS"), " ")
-	proxyUpstreamPorts := strings.Split(mustEnv("PROXY_UPSTREAM_PORTS"), " ")
+	DOKKU_APP_LISTENERS := os.Getenv("DOKKU_APP_LISTENERS")
+	var appListeners []string
+	if DOKKU_APP_LISTENERS == "" || strings.Contains(DOKKU_APP_LISTENERS, "invalid IP") {
+		appListeners = []string{}
+	} else {
+		appListeners = strings.Split(DOKKU_APP_LISTENERS, " ")
+	}
+
+	PROXY_UPSTREAM_PORTS := os.Getenv("PROXY_UPSTREAM_PORTS")
+	var proxyUpstreamPorts []string
+	if PROXY_UPSTREAM_PORTS == "" {
+		proxyUpstreamPorts = []string{}
+	} else {
+		proxyUpstreamPorts = strings.Split(mustEnv("PROXY_UPSTREAM_PORTS"), " ")
+	}
 
 	tmplData := upstreamConfigTemplateData{
 		App:                appName,
