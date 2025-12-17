@@ -3,7 +3,7 @@
 fn-get-property() {
   declare desc="get a property from the nginx plugin"
 
-  "$_DIR/nginx-property" --log-root "$(fn-nginx-custom-log-root)"  "$@"
+  "$_DIR/nginx-property" "$@"
 }
 
 export PROXY_NAME="nginx-custom"
