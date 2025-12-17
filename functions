@@ -100,11 +100,11 @@ nginx_build_config() {
   export FASTCGI_CACHE_DEFAULT_KEY_ZONE_SIZE="$(fn-nginx-custom-fastcgi-cache-default-key-zone-size "$APP")"
   export DOKKU_APP_CONTAINER_WORKING_DIR_PATH="$(app_container_get_working_dir_path "$APP")"
   export NGINX_ADD_HEADER_MODE="$(fn-nginx-custom-add-header-mode "$APP")"
-  export DOKKU_APP_STORAGE_DIR="${DOKKU_STORAGE_DIR}/${APP}"
+  export DOKKU_APP_STORAGE_DIR="$(fn-get-storage-dir)/${APP}"
   "$_DIR/nginx-config-builder" \
     -app-name "$APP" \
-    -config-file-path "${DATA_DIRECTORY}/app-$APP/nginx-custom-config-yaml/$(fn-nginx-custom-config-file "$APP")" \
-    -dokku-data-root-directory "${DATA_DIRECTORY}/app-${APP}" \
+    -config-file-path "$(fn-get-data-dir)/app-$APP/nginx-custom-config-yaml/$(fn-nginx-custom-config-file "$APP")" \
+    -dokku-data-root-directory "$(fn-get-data-dir)/app-${APP}" \
     -nginx-test-command "$nginx_test_command"
 }
 

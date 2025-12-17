@@ -4,31 +4,3 @@ set -eo pipefail
 [[ $DOKKU_TRACE ]] && set -x
 _DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-fn-get-property() {
-  declare desc="get a property from the nginx plugin"
-
-  "$_DIR/nginx-property" "$@"
-}
-
-export PROXY_NAME="nginx-custom"
-
-export DEFAULT_DATA_DIR="${DOKKU_LIB_ROOT}/data"
-user_defined_data_dir=$(fn-get-property --global "data-dir")
-DATA_DIR=""
-if [[ -n "$user_defined_data_dir" ]]; then
-  DATA_DIR="$user_defined_data_dir/${PROXY_NAME}"
-else
-  DATA_DIR="$DEFAULT_DATA_DIR"
-fi
-export DATA_DIR="${DATA_DIR}/${PROXY_NAME}"
-
-# storage dir
-export DEFAULT_STORAGE_DIR="${DOKKU_LIB_ROOT}/data/storage"
-user_defined_storage_dir=$(fn-get-property --global "storage-dir")
-STORAGE_DIR=""
-if [[ -n "$user_defined_storage_dir" ]]; then
-  STORAGE_DIR="$user_defined_storage_dir"
-else
-  STORAGE_DIR="$DEFAULT_STORAGE_DIR"
-fi
-export DOKKU_STORAGE_DIR="${STORAGE_DIR}"

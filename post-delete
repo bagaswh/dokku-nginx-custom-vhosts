@@ -20,7 +20,7 @@ trigger-nginx-custom-core-post-delete() {
     return
   fi
   
-  rm -rf "${DATA_DIRECTORY}/app-${APP}"
+  rm -rf "$(fn-get-data-dir)/app-${APP}"
   nginx_test_command="sudo nginx -t"
   if fn-nginx-custom-uses-openresty; then
     nginx_test_command="sudo openresty -t"
