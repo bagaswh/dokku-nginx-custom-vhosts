@@ -21,11 +21,11 @@ func main() {
 	}
 
 	if *appName == "" {
-		log.Fatalln("app is required")
+		log.Fatalf("app is required. args: %s\n", os.Args)
 	}
 
 	if *logRoot == "" {
-		log.Fatalln("log-root is required")
+		log.Fatalf("log-root is required. args: %s\n", os.Args)
 	}
 
 	proxyName := os.Getenv("PROXY_NAME")
