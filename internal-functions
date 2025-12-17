@@ -127,8 +127,11 @@ fn-nginx-custom-fastcgi-cache-default-key-zone-size() {
 export PROXY_NAME="nginx-custom"
 
 fn-get-data-dir() {
+  declare desc="get the data directory"
+  declare APP="$1"
+
   DEFAULT_DATA_DIR="${DOKKU_LIB_ROOT}/data"
-  user_defined_data_dir=$(fn-get-property --global "data-dir")
+  user_defined_data_dir=$(fn-get-property --app "$APP" --global "data-dir")
   DATA_DIR=""
   if [[ -n "$user_defined_data_dir" ]]; then
     DATA_DIR="$user_defined_data_dir/${PROXY_NAME}"
@@ -139,8 +142,11 @@ fn-get-data-dir() {
 }
 
 fn-get-storage-dir() {
+  declare desc="get the storage directory"
+  declare APP="$1"
+  
   DEFAULT_STORAGE_DIR="${DOKKU_LIB_ROOT}/data/storage"
-  user_defined_storage_dir=$(fn-get-property --global "storage-dir")
+  user_defined_storage_dir=$(fn-get-property --app "$APP" --global "storage-dir")
   STORAGE_DIR=""
   if [[ -n "$user_defined_storage_dir" ]]; then
     STORAGE_DIR="$user_defined_storage_dir"
