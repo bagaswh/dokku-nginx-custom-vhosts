@@ -88,7 +88,10 @@ nginx_build_config() {
     nginx_test_command="sudo openresty -t"
   fi
 
-  export DOKKU_APP_CONTAINER_LABELS="$(app_container_get_labels "$APP")"
+  container=$(app_container_get "$APP")
+
+  export DOKKU_APP_CONTAINER_LABELS="$(app_container_get_labels "$APP" "$container")"
+  export DOKKU_APP_CONTAINER_MOUNTS="$(app_container_get_mounts "$APP" "$container")"
   export DOKKU_APP_LISTENERS PROXY_PORT PROXY_PORT_MAP PROXY_UPSTREAM_PORTS
   export PROXY_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-proxy-cache-on-disk-root-path "$APP")"
   export PROXY_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-proxy-cache-in-mem-root-path "$APP")"
@@ -100,7 +103,6 @@ nginx_build_config() {
   export FASTCGI_CACHE_DEFAULT_KEY_ZONE_SIZE="$(fn-nginx-custom-fastcgi-cache-default-key-zone-size "$APP")"
   export DOKKU_APP_CONTAINER_WORKING_DIR_PATH="$(app_container_get_working_dir_path "$APP")"
   export NGINX_ADD_HEADER_MODE="$(fn-nginx-custom-add-header-mode "$APP")"
-  export DOKKU_APP_STORAGE_DIR="$(fn-get-storage-dir $APP)/${APP}"
   "$_DIR/nginx-config-builder" \
     -app-name "$APP" \
     -config-file-path "$(fn-get-data-dir $APP)/app-$APP/nginx-custom-config-yaml/$(fn-nginx-custom-config-file "$APP")" \
@@ -121,25 +123,32 @@ app_container_get() {
 
 app_container_get_merged_dir_path() {
     declare APP_NAME="$1"
+    declare CONTAINER="$2"
 
-    container=$(app_container_get "$APP_NAME")
-    merged_dir_path="$(docker inspect --format='{{.GraphDriver.Data.MergedDir}}' "$container")"
+    merged_dir_path="$(docker inspect --format='{{.GraphDriver.Data.MergedDir}}' "$CONTAINER")"
     echo "$merged_dir_path"
 }
 
 app_container_get_working_dir_path() {
     declare APP_NAME="$1"
+    declare CONTAINER="$2"
 
-    container=$(app_container_get "$APP_NAME")
-    merged_dir_path=$(app_container_get_merged_dir_path "$APP_NAME")
-    image="$(docker inspect --format='{{.Image}}' "$container")"
+    merged_dir_path=$(app_container_get_merged_dir_path "$APP_NAME" "$CONTAINER")
+    image="$(docker inspect --format='{{.Image}}' "$CONTAINER")"
     working_dir_path="$merged_dir_path/$(docker image inspect --format "{{.Config.WorkingDir}}" $image)"
     echo "$working_dir_path"
 }
 
 app_container_get_labels() {
     declare APP_NAME="$1"
+    declare CONTAINER="$2"
 
-    container=$(app_container_get "$APP_NAME")
-    docker inspect --format='{{json .Config.Labels}}' "$container"
+    docker inspect --format='{{json .Config.Labels}}' "$CONTAINER"
+}
+
+app_container_get_mounts() {
+    declare APP_NAME="$1"
+    declare CONTAINER="$2"
+
+    docker inspect --format='{{json .Mounts}}' "$CONTAINER"
 }

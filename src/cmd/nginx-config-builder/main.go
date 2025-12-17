@@ -709,10 +709,30 @@ func main() {
 		log.Fatalln("error marshaling container labels:", err)
 	}
 
+	type Mount struct {
+		Type        string `json:"Type"`
+		Source      string `json:"Source"`
+		Destination string `json:"Destination"`
+		Mode        string `json:"Mode"`
+		RW          bool   `json:"RW"`
+		Propagation string `json:"Propagation"`
+	}
+
+	var containerMounts []Mount
+	err = json.Unmarshal([]byte(os.Getenv("DOKKU_APP_CONTAINER_MOUNTS")), &containerMounts)
+	if err != nil {
+		log.Fatalln("error marshaling container mounts:", err)
+	}
+
+	containerMountsMap := make(map[string]Mount)
+	for _, mount := range containerMounts {
+		containerMountsMap[mount.Destination] = mount
+	}
+
 	cfg.SysVars = file_config.ConfigVars{
 		"container_working_dir": os.Getenv("DOKKU_APP_CONTAINER_WORKING_DIR_PATH"),
 		"container_labels":      containerLabels,
-		"dokku_app_storage_dir": os.Getenv("DOKKU_APP_STORAGE_DIR"),
+		"container_mounts":      containerMountsMap,
 	}
 
 	userVars, err := resolveUserVars(cfg.UserVars, map[string]any{
