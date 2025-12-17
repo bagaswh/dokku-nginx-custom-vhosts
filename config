@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+set -eo pipefail
+[[ $DOKKU_TRACE ]] && set -x
+_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 fn-get-property() {
   declare desc="get a property from the nginx plugin"
 
