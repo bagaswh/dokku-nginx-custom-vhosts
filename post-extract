@@ -10,7 +10,7 @@ set -eo pipefail
 fn-nginx-custom-copy-from-image() {
   declare APP="$1" IMAGE_NAME="$2" CONFIG_FILE_PATH="$3"
 
-  conf_dest_path_base_dir="$(fn-get-data-dir $APP)/app-$APP/nginx-custom-config-yaml/$(dirname ${CONFIG_FILE_PATH})" 
+  conf_dest_path_base_dir="$(dirname $(nginx_get_yaml_config_absolute_path "$APP"))" 
   
   mkdir -p "$conf_dest_path_base_dir"
 

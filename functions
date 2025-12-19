@@ -51,48 +51,71 @@ restart_nginx() {
 
 }
 
+get_process_types() {
+  declare desc="get process types for given app"
+  declare APP="$1"
+
+  plugn trigger ps-current-scale "$APP" | grep -oP '\w+(?==)' | xargs
+}
+
+get_app_listeners_json() {
+  declare desc="build JSON dictionary of listeners by process type"
+  declare APP="$1"
+  declare PROCESS_TYPES="$2"
+  
+  local json="{"
+  local first=true
+  
+  for process_type in $PROCESS_TYPES; do
+    local listeners="$(plugn trigger network-get-listeners "$APP" "$process_type" | xargs)"
+    
+    if [[ "$first" != "true" ]]; then
+      json+=", "
+    fi
+    first=false
+    
+    # Build JSON array of listeners
+    local listener_array="["
+    if [[ -n "$listeners" ]]; then
+      local first_listener=true
+      for listener in $listeners; do
+        if [[ "$first_listener" != "true" ]]; then
+          listener_array+=", "
+        fi
+        first_listener=false
+        listener_array+="\"$listener\""
+      done
+    fi
+    listener_array+="]"
+    
+    json+="\"$process_type\": $listener_array"
+  done
+  json+="}"
+  
+  echo "$json"
+}
+
 nginx_build_config() {
   declare desc="build nginx config to proxy app containers using sigil"
   declare APP="$1"
 
-  DOKKU_APP_LISTENERS="$(plugn trigger network-get-listeners "$APP" "web" | xargs)"
+  DOKKU_PROCESS_TYPES="$(get_process_types "$APP")"
+  DOKKU_APP_LISTENERS="$(get_app_listeners_json "$APP" "$DOKKU_PROCESS_TYPES")"
 
   echo -e "DOKKU_APP_LISTENERS: $DOKKU_APP_LISTENERS"
 
   plugn trigger ports-configure "$APP"
-  local PROXY_PORT=$(config_get "$APP" DOKKU_PROXY_PORT)
-  local PROXY_SSL_PORT=$(config_get "$APP" DOKKU_PROXY_SSL_PORT)
-  echo -e "PROXY_PORT: $PROXY_PORT"
-  echo -e "PROXY_SSL_PORT: $PROXY_SSL_PORT"
-
-  local PORT_MAP PROXY_PORT_MAP proxy_port_map
-  while read -r PORT_MAP; do
-    echo -e "PORT_MAP: $PORT_MAP"
-
-    local PROXY_UPSTREAM_SCHEME="$(awk -F ':' '{ print $1 }' <<<"$PORT_MAP")"
-
-    proxy_port_map="$proxy_port_map $PORT_MAP"
-
-    local PROXY_UPSTREAM_PORT="$(awk -F ':' '{ print $3 }' <<<"$PORT_MAP")"
-    if [[ "$(is_val_in_list "$PROXY_UPSTREAM_PORT" "$PROXY_UPSTREAM_PORTS" " ")" == "false" ]]; then
-      local PROXY_UPSTREAM_PORTS+="$PROXY_UPSTREAM_PORT "
-    fi
-  done < <(plugn trigger ports-get "$APP")
-  
-  PROXY_PORT_MAP="$(echo "$proxy_port_map" | xargs)"
-
-  local PROXY_UPSTREAM_PORTS="$(echo "$PROXY_UPSTREAM_PORTS" | xargs)"
 
   nginx_test_command="sudo nginx -t"
   if fn-nginx-custom-uses-openresty; then
     nginx_test_command="sudo openresty -t"
   fi
 
-  container=$(app_container_get "$APP")
+  container="$(app_container_get "$APP")"
 
   export DOKKU_APP_CONTAINER_LABELS="$(app_container_get_labels "$APP" "$container")"
   export DOKKU_APP_CONTAINER_MOUNTS="$(app_container_get_mounts "$APP" "$container")"
-  export DOKKU_APP_LISTENERS PROXY_PORT PROXY_PORT_MAP PROXY_UPSTREAM_PORTS
+  export DOKKU_APP_LISTENERS
   export PROXY_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-proxy-cache-on-disk-root-path "$APP")"
   export PROXY_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-proxy-cache-in-mem-root-path "$APP")"
   export FASTCGI_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-fastcgi-cache-on-disk-root-path "$APP")"
@@ -101,13 +124,48 @@ nginx_build_config() {
   export FASTCGI_CACHE_DEFAULT_FLAGS="$(fn-nginx-custom-fastcgi-cache-default-flags "$APP")"
   export PROXY_CACHE_DEFAULT_KEY_ZONE_SIZE="$(fn-nginx-custom-proxy-cache-default-key-zone-size "$APP")"
   export FASTCGI_CACHE_DEFAULT_KEY_ZONE_SIZE="$(fn-nginx-custom-fastcgi-cache-default-key-zone-size "$APP")"
-  export DOKKU_APP_CONTAINER_WORKING_DIR_PATH="$(app_container_get_working_dir_path "$APP")"
+  export DOKKU_APP_CONTAINER_WORKING_DIR_PATH="$(app_container_get_working_dir_path "$APP" "$container")"
   export NGINX_ADD_HEADER_MODE="$(fn-nginx-custom-add-header-mode "$APP")"
   "$_DIR/nginx-config-builder" \
     -app-name "$APP" \
-    -config-file-path "$(fn-get-data-dir $APP)/app-$APP/nginx-custom-config-yaml/$(fn-nginx-custom-config-file "$APP")" \
+    -config-file-path "$(nginx_get_yaml_config_absolute_path "$APP")" \
     -dokku-data-root-directory "$(fn-get-data-dir $APP)/app-${APP}" \
     -nginx-test-command "$nginx_test_command"
+}
+
+nginx_purge_cache() {
+  declare desc="purge nginx cache"
+  declare APP="$1"
+
+  nginx_config="$(nginx_get_yaml_config_absolute_path "$APP")"
+  
+  # Query proxy_caches entries where purge_on_deploy is true, get names as comma-separated
+  proxy_caches_to_purge="$($_DIR/file-config -config "$nginx_config" "join(',', proxy_caches[?purge_on_deploy == \`true\`].name)")"
+  
+  # Query fastcgi_caches entries where purge_on_deploy is true, get names as comma-separated
+  fastcgi_caches_to_purge="$($_DIR/file-config -config "$nginx_config" "join(',', fastcgi_caches[?purge_on_deploy == \`true\`].name)")"
+
+  echo "proxy_caches_to_purge: $proxy_caches_to_purge"
+  echo "fastcgi_caches_to_purge: $fastcgi_caches_to_purge"
+
+  export PROXY_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-proxy-cache-on-disk-root-path "$APP")"
+  export PROXY_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-proxy-cache-in-mem-root-path "$APP")"
+  export FASTCGI_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-fastcgi-cache-on-disk-root-path "$APP")"
+  export FASTCGI_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-fastcgi-cache-in-mem-root-path "$APP")"
+
+  $_DIR/cache-purger \
+    -config "$nginx_config" \
+    -proxy-caches "$proxy_caches_to_purge" \
+    -fastcgi-caches "$fastcgi_caches_to_purge" \
+    -app-name "$APP"
+}
+
+nginx_get_yaml_config_absolute_path() {
+  desc="get the absolute path of the nginx config file"
+  declare APP="$1"
+
+  config_file_path=$(fn-nginx-custom-config-file "$APP")
+  echo "$(fn-get-data-dir $APP)/app-$APP/nginx-custom-config-yaml/$config_file_path"
 }
 
 app_container_get() {
@@ -122,16 +180,14 @@ app_container_get() {
 }
 
 app_container_get_merged_dir_path() {
-    declare APP_NAME="$1"
-    declare CONTAINER="$2"
+    declare APP_NAME="$1" CONTAINER="$2"
 
     merged_dir_path="$(docker inspect --format='{{.GraphDriver.Data.MergedDir}}' "$CONTAINER")"
     echo "$merged_dir_path"
 }
 
 app_container_get_working_dir_path() {
-    declare APP_NAME="$1"
-    declare CONTAINER="$2"
+    declare APP_NAME="$1" CONTAINER="$2"
 
     merged_dir_path=$(app_container_get_merged_dir_path "$APP_NAME" "$CONTAINER")
     image="$(docker inspect --format='{{.Image}}' "$CONTAINER")"
@@ -140,15 +196,13 @@ app_container_get_working_dir_path() {
 }
 
 app_container_get_labels() {
-    declare APP_NAME="$1"
-    declare CONTAINER="$2"
+    declare APP_NAME="$1" CONTAINER="$2"
 
     docker inspect --format='{{json .Config.Labels}}' "$CONTAINER"
 }
 
 app_container_get_mounts() {
-    declare APP_NAME="$1"
-    declare CONTAINER="$2"
-
-    docker inspect --format='{{json .Mounts}}' "$CONTAINER"
+    declare APP_NAME="$1" CONTAINER="$2"
+    
+    docker inspect --format='{{json .Mounts}}' "$CONTAINER"   
 }

@@ -30,9 +30,8 @@ func mustEnv(name string) string {
 }
 
 type upstreamConfigTemplateData struct {
-	ProxyUpstreamPorts []string `json:"ProxyUpstreamPorts"`
-	AppListeners       []string `json:"AppListeners"`
-	App                string   `json:"App"`
+	AppListeners map[string][]string `json:"AppListeners"`
+	App          string              `json:"App"`
 }
 
 type upstreamServer struct {
@@ -48,38 +47,93 @@ type upstreamConfig struct {
 
 type upstreamResultingNames map[string]string
 
+// func applyDirectivesToPredefinedUpstreams(appName string, config *file_config.Config, data *upstreamConfigTemplateData, upstreamConfigs map[string]*upstreamConfig) {
+// 	// apply directives to predefined upstreams
+// 	for _, upstreamCfg := range config.Upstreams {
+// 		var ucs []*upstreamConfig
+// 		if upstreamCfg.SelectProcessType != "" {
+// 			continue
+// 		}
+
+// 		if upstreamCfg.SelectDefaultPort != 0 {
+// 			uc, ok := upstreamConfigs[fmt.Sprintf("default-%d", upstreamCfg.SelectDefaultPort)]
+// 			if !ok {
+// 				return "", nil, fmt.Errorf("failed to find upstream config for port %d", upstreamCfg.SelectDefaultPort)
+// 			}
+// 			ucs = append(ucs, uc)
+// 		} else {
+// 			for _, uc := range upstreamConfigs {
+// 				ucs = append(ucs, uc)
+// 			}
+// 		}
+
+// 		if upstreamCfg.DefaultServersFlags != nil {
+// 			for _, serverFlagCfg := range upstreamCfg.DefaultServersFlags {
+// 				for _, uc := range ucs {
+// 					if serverFlagCfg.Selector == "" {
+// 						for i := range uc.Servers {
+// 							// empty selector field means all servers apply
+// 							mergo.Merge(&uc.Servers[i].Flags, serverFlagCfg.Flags, mergo.WithOverride)
+// 						}
+// 					} else {
+// 						for i, server := range uc.Servers {
+// 							regex, err := regexp.Compile(serverFlagCfg.Selector)
+// 							if err != nil {
+// 								return "", nil, fmt.Errorf("failed to compile regex: %v", err)
+// 							}
+// 							if regex.MatchString(server.Addr) {
+// 								mergo.Merge(&uc.Servers[i].Flags, serverFlagCfg.Flags, mergo.WithOverride)
+// 							}
+// 						}
+// 					}
+// 				}
+// 			}
+// 		}
+// 	}
+
+// }
+
 func buildUpstreamConfig(appName string, config *file_config.Config, data *upstreamConfigTemplateData) (string, upstreamResultingNames, error) {
 	upstreamConfigs := make(map[string]*upstreamConfig, 0)
 
 	upstreamResultingNames := make(upstreamResultingNames, 0)
 
 	// default upstreams
-	for _, port := range data.ProxyUpstreamPorts {
-		refName := fmt.Sprintf("default-%s", port)
-		generatedUpstreamName := fmt.Sprintf("%s-%s", appName, port)
-		upstreamResultingNames[refName] = generatedUpstreamName
-
-		if _, ok := upstreamResultingNames["default"]; !ok {
-			upstreamResultingNames["default"] = generatedUpstreamName
-		}
-
-		upstreamMapKey := fmt.Sprintf("default-%s", port)
-		upstreamConfigs[upstreamMapKey] = &upstreamConfig{
-			GeneratedUpstreamName: generatedUpstreamName,
-			Servers:               make([]upstreamServer, 0),
-		}
-		uc := upstreamConfigs[upstreamMapKey]
-		for _, listener := range data.AppListeners {
+	for processType, listeners := range data.AppListeners {
+		for _, listener := range listeners {
 			listenerSplit := strings.Split(listener, ":")
 			if len(listenerSplit) != 2 {
 				fmt.Printf("[warn] failed to parse listener %s\n", listener)
 				continue
 			}
-			upstreamAddr := listenerSplit[0]
+			port := listenerSplit[1]
+
+			refName := fmt.Sprintf("%s-%s", processType, port)
+			generatedUpstreamName := fmt.Sprintf("%s-%s", appName, refName)
+			upstreamResultingNames[refName] = generatedUpstreamName
+
+			if processType == "web" {
+				refNameDefault := fmt.Sprintf("default-%s", port)
+				upstreamResultingNames[refNameDefault] = generatedUpstreamName
+
+				if _, ok := upstreamResultingNames["default"]; !ok {
+					upstreamResultingNames["default"] = generatedUpstreamName
+				}
+			}
+
+			uc, ok := upstreamConfigs[refName]
+			if !ok {
+				upstreamConfigs[refName] = &upstreamConfig{
+					GeneratedUpstreamName: generatedUpstreamName,
+					Servers:               make([]upstreamServer, 0),
+				}
+				uc = upstreamConfigs[refName]
+			}
+
+			addr := listenerSplit[0]
 			uc.Servers = append(uc.Servers, upstreamServer{
-				Addr: fmt.Sprintf("%s:%s", upstreamAddr, port),
+				Addr: fmt.Sprintf("%s:%s", addr, port),
 			})
-			upstreamConfigs[upstreamMapKey] = uc
 		}
 	}
 
@@ -100,48 +154,6 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 				Addr:  server.Addr,
 				Flags: server.Flags,
 			})
-		}
-	}
-
-	for _, upstreamCfg := range config.Upstreams {
-		var ucs []*upstreamConfig
-		if !upstreamCfg.SelectDefault {
-			continue
-		}
-
-		if upstreamCfg.SelectDefaultPort != 0 {
-			uc, ok := upstreamConfigs[fmt.Sprintf("default-%d", upstreamCfg.SelectDefaultPort)]
-			if !ok {
-				return "", nil, fmt.Errorf("failed to find upstream config for port %d", upstreamCfg.SelectDefaultPort)
-			}
-			ucs = append(ucs, uc)
-		} else {
-			for _, uc := range upstreamConfigs {
-				ucs = append(ucs, uc)
-			}
-		}
-
-		if upstreamCfg.DefaultServersFlags != nil {
-			for _, serverFlagCfg := range upstreamCfg.DefaultServersFlags {
-				for _, uc := range ucs {
-					if serverFlagCfg.Selector == "" {
-						for i := range uc.Servers {
-							// empty selector field means all servers apply
-							mergo.Merge(&uc.Servers[i].Flags, serverFlagCfg.Flags, mergo.WithOverride)
-						}
-					} else {
-						for i, server := range uc.Servers {
-							regex, err := regexp.Compile(serverFlagCfg.Selector)
-							if err != nil {
-								return "", nil, fmt.Errorf("failed to compile regex: %v", err)
-							}
-							if regex.MatchString(server.Addr) {
-								mergo.Merge(&uc.Servers[i].Flags, serverFlagCfg.Flags, mergo.WithOverride)
-							}
-						}
-					}
-				}
-			}
 		}
 	}
 
@@ -698,15 +710,15 @@ func main() {
 	nginxWorkingDirectory = path.Join(dokkuAppDataRootDirectory, fmt.Sprintf("%s-config", mustEnv("PROXY_NAME")))
 	nginxConfigDirectory := path.Join(nginxWorkingDirectory, "conf.d")
 
-	cfg, _, err := file_config.ReadConfig(configFilePath)
-	if err != nil {
-		log.Fatalln("error parsing config file:", err)
+	cfg, _, readConfigFileErr := file_config.ReadConfig(configFilePath)
+	if readConfigFileErr != nil {
+		log.Fatalln("error parsing config file:", readConfigFileErr)
 	}
 
 	containerLabels := make(map[string]any)
 	containerLabelsUnmarshalErr := json.Unmarshal([]byte(os.Getenv("DOKKU_APP_CONTAINER_LABELS")), &containerLabels)
 	if containerLabelsUnmarshalErr != nil {
-		log.Fatalln("error marshaling container labels:", err)
+		log.Fatalf("error marshaling container labels: %v; labels=%s", containerLabelsUnmarshalErr, os.Getenv("DOKKU_APP_CONTAINER_LABELS"))
 	}
 
 	type Mount struct {
@@ -719,9 +731,9 @@ func main() {
 	}
 
 	var containerMounts []Mount
-	err = json.Unmarshal([]byte(os.Getenv("DOKKU_APP_CONTAINER_MOUNTS")), &containerMounts)
-	if err != nil {
-		log.Fatalln("error marshaling container mounts:", err)
+	containerMountsUnmarshalErr := json.Unmarshal([]byte(os.Getenv("DOKKU_APP_CONTAINER_MOUNTS")), &containerMounts)
+	if containerMountsUnmarshalErr != nil {
+		log.Fatalln("error marshaling container mounts:", containerMountsUnmarshalErr)
 	}
 
 	containerMountsMap := make(map[string]Mount)
@@ -760,25 +772,15 @@ func main() {
 	sigil.Register(tmplFuncs)
 
 	DOKKU_APP_LISTENERS := os.Getenv("DOKKU_APP_LISTENERS")
-	var appListeners []string
-	if DOKKU_APP_LISTENERS == "" || strings.Contains(DOKKU_APP_LISTENERS, "invalid IP") {
-		appListeners = []string{}
-	} else {
-		appListeners = strings.Split(DOKKU_APP_LISTENERS, " ")
-	}
-
-	PROXY_UPSTREAM_PORTS := os.Getenv("PROXY_UPSTREAM_PORTS")
-	var proxyUpstreamPorts []string
-	if PROXY_UPSTREAM_PORTS == "" {
-		proxyUpstreamPorts = []string{}
-	} else {
-		proxyUpstreamPorts = strings.Split(mustEnv("PROXY_UPSTREAM_PORTS"), " ")
+	var appListeners map[string][]string
+	appListenersUnmarshalErr := json.Unmarshal([]byte(DOKKU_APP_LISTENERS), &appListeners)
+	if appListenersUnmarshalErr != nil {
+		log.Fatalln("error unmarshaling app listeners:", appListenersUnmarshalErr)
 	}
 
 	tmplData := upstreamConfigTemplateData{
-		App:                appName,
-		ProxyUpstreamPorts: proxyUpstreamPorts,
-		AppListeners:       appListeners,
+		App:          appName,
+		AppListeners: appListeners,
 	}
 
 	upstreamCfgStr, upstreams, err := buildUpstreamConfig(appName, cfg, &tmplData)

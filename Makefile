@@ -21,7 +21,7 @@ $(AVAILABLE_COMMANDS): %: clean-%
 		-e GO111MODULE=on \
 		-w /go/src/nginx-custom \
 		$(BUILD_IMAGE) \
-		bash -c "CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) GOWORK=off go build -ldflags='-s -w' $(GO_ARGS) -o $@ ./src/cmd/$@" || exit $$?
+		bash -c "CGO_ENABLED=0 GOFLAGS=-buildvcs=false GOOS=linux GOARCH=$(GOARCH) GOWORK=off go build -ldflags='-s -w' $(GO_ARGS) -o $@ ./src/cmd/$@" || exit $$?
 
 clean-%:
 	@rm -f $(shell echo $* | sed 's/.*/&/')

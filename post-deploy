@@ -21,6 +21,7 @@ trigger-nginx-custom-core-post-deploy() {
   fi
 
   plugn trigger proxy-build-config "$APP"
+  nginx_purge_cache "$APP"
 }
 
 trigger-nginx-custom-core-post-deploy "$@"

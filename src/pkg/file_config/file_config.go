@@ -26,12 +26,11 @@ type UpstreamServerFlags struct {
 
 type UpstreamConfig struct {
 	// Select and Name are mutually exclusive
-	SelectDefault       bool                  `yaml:"select_default" validate:"excluded_with=Name,excluded_with=Servers" json:"select_default"`
-	SelectDefaultPort   int                   `yaml:"select_default_port" validate:"excluded_without=SelectDefault" json:"select_default_port"`
-	DefaultServersFlags []UpstreamServerFlags `yaml:"default_servers_flags" validate:"required_if=SelectDefault true" json:"default_servers_flags"`
+	// SelectProcessType   string                `yaml:"select_process_type" validate:"excluded_with=Name,excluded_with=Servers" json:"select_process_type"`
+	// DefaultServersFlags []UpstreamServerFlags `yaml:"default_servers_flags" validate:"required_with=SelectFromProcessType" json:"default_servers_flags"`
 
-	Name    string           `yaml:"name" validate:"required_if=SelectDefault false" json:"name"`
-	Servers []UpstreamServer `yaml:"servers" validate:"required_if=Name true,excluded_with=Select" json:"servers"`
+	Name    string           `yaml:"name" validate:"required_if=SelectProcessType ''" json:"name"`
+	Servers []UpstreamServer `yaml:"servers" validate:"required_if=Name true,excluded_with=select_process_type" json:"servers"`
 }
 
 type LocationConfig struct {
@@ -53,12 +52,13 @@ type VariableConfig struct {
 }
 
 type CacheConfig struct {
-	Name        string            `yaml:"name" validate:"required" json:"name"`
-	CachePath   string            `yaml:"proxy_cache_path" json:"proxy_cache_path"`
-	KeyZoneSize string            `yaml:"key_zone_size" json:"key_zone_size"`
-	Flags       map[string]string `json:"flags" yaml:"flags"`
-	InMem       bool              `yaml:"in_mem" json:"in_mem" validate:"excluded_if=OnDisk true"`
-	OnDisk      bool              `yaml:"on_disk" json:"on_disk" validate:"excluded_if=InMem true"`
+	Name          string            `yaml:"name" validate:"required" json:"name"`
+	CachePath     string            `yaml:"proxy_cache_path" json:"proxy_cache_path"`
+	KeyZoneSize   string            `yaml:"key_zone_size" json:"key_zone_size"`
+	Flags         map[string]string `json:"flags" yaml:"flags"`
+	InMem         bool              `yaml:"in_mem" json:"in_mem" validate:"excluded_if=OnDisk true"`
+	OnDisk        bool              `yaml:"on_disk" json:"on_disk" validate:"excluded_if=InMem true"`
+	PurgeOnDeploy bool              `yaml:"purge_on_deploy" json:"purge_on_deploy"`
 }
 
 type VhostConfig struct {

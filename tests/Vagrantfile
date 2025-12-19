@@ -4,6 +4,8 @@
 vmname = File.basename(File.expand_path(File.dirname(__FILE__)))
 
 Vagrant.configure("2") do |config|
+  config.vm.synced_folder "../", "/dokku-nginx-path"
+
   config.vm.define "Ubuntu-24.04" do |ap|
     ap.vm.box = "bento/ubuntu-24.04"
     ap.vm.hostname = "Ubuntu-24.04"

@@ -2,3 +2,5 @@
 /nginx-property
 /nginx-config-builder
 /file-config
+test-scripts/*.tar.*
+test-scripts/*.zip

@@ -2,16 +2,24 @@ package main
 
 import (
 	"dokku-nginx-custom/src/pkg/file_config"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"slices"
 
 	"gopkg.in/yaml.v3"
 )
 
 func main() {
 	configPath := flag.String("config", "", "Path to YAML config file")
+	outputFormat := flag.String("o", "json", "Output format (yaml or json)")
 	flag.Parse()
+
+	validOutputFormats := []string{"json", "yaml"}
+	if !slices.Contains(validOutputFormats, *outputFormat) {
+		log.Fatalf("Invalid output format: %s. Valid formats: %v", *outputFormat, validOutputFormats)
+	}
 
 	if *configPath == "" {
 		log.Fatal("Please provide a config file path using -config flag")
@@ -37,13 +45,22 @@ func main() {
 			log.Fatalf("Error querying config: %v", err)
 		}
 
-		// Output result as YAML
-		output, err := yaml.Marshal(result)
-		if err != nil {
-			log.Fatalf("Error marshaling query result: %v", err)
+		switch *outputFormat {
+		case "json":
+			output, err := json.Marshal(result)
+			if err != nil {
+				log.Fatalf("Error marshaling query result: %v", err)
+			}
+			fmt.Println(string(output))
+			return
+		case "yaml":
+			output, err := yaml.Marshal(result)
+			if err != nil {
+				log.Fatalf("Error marshaling query result: %v", err)
+			}
+			fmt.Println(string(output))
+			return
 		}
-		fmt.Println(string(output))
-		return
 	}
 
 	log.Fatalln("Please provide the query as positional argument")
