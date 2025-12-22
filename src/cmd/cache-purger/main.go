@@ -142,10 +142,6 @@ func main() {
 	proxyCaches := parseCSVFlag(proxyCachesFlag)
 	fastcgiCaches := parseCSVFlag(fastcgiFlag)
 
-	if len(proxyCaches) == 0 && len(fastcgiCaches) == 0 {
-		log.Fatalln("no caches specified: provide -proxy-caches and/or -fastcgi-caches")
-	}
-
 	cfg, _, err := file_config.ReadConfig(configPath)
 	if err != nil {
 		log.Fatalln("error parsing config file:", err)
