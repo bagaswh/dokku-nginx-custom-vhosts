@@ -777,13 +777,10 @@ func main() {
 		},
 		"container_mount_source_abs": func(mountPath string, joinElem ...string) string {
 			p := ""
-			for _, mount := range containerMounts {
-				if mount.Destination == mountPath {
-					p = mount.Source
-				}
-			}
-			if p == "" {
-				return ""
+			if mnt, ok := containerMountsMap[mountPath]; ok {
+				p = mnt.Source
+			} else {
+				panic(fmt.Errorf("container mount %q not found", mountPath))
 			}
 			if len(joinElem) > 0 {
 				elems := append([]string{p}, joinElem...)
