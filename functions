@@ -140,10 +140,18 @@ nginx_purge_cache() {
   nginx_config="$(nginx_get_yaml_config_absolute_path "$APP")"
   
   # Query proxy_caches entries where purge_on_deploy is true, get names as comma-separated
-  proxy_caches_to_purge="$($_DIR/file-config -config "$nginx_config" "join(',', proxy_caches[?purge_on_deploy == \`true\`].name)")"
+  if [[ "$($_DIR/file-config -config "$nginx_config" proxy_caches)" != "null" ]]; then
+    proxy_caches_to_purge="$($_DIR/file-config -config "$nginx_config" "join(',', proxy_caches[?purge_on_deploy == \`true\`].name)")"
+  else
+    proxy_caches_to_purge=""
+  fi
   
   # Query fastcgi_caches entries where purge_on_deploy is true, get names as comma-separated
-  fastcgi_caches_to_purge="$($_DIR/file-config -config "$nginx_config" "join(',', fastcgi_caches[?purge_on_deploy == \`true\`].name)")"
+  if [[ "$($_DIR/file-config -config "$nginx_config" fastcgi_caches)" != "null" ]]; then
+    fastcgi_caches_to_purge="$($_DIR/file-config -config "$nginx_config" "join(',', fastcgi_caches[?purge_on_deploy == \`true\`].name)")"
+  else
+    fastcgi_caches_to_purge=""
+  fi
 
   echo "proxy_caches_to_purge: $proxy_caches_to_purge"
   echo "fastcgi_caches_to_purge: $fastcgi_caches_to_purge"

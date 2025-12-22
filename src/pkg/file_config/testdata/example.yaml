@@ -115,16 +115,6 @@ proxy_caches:
     on_disk: true
     purge_on_deploy: true
 
-fastcgi_caches:
-  - name: in_mem
-    in_mem: true
-    key_zone_size: 5m
-    purge_on_deploy: true
-
-  - name: on_disk
-    on_disk: true
-    purge_on_deploy: true
-
 in_server_block: |
   ssl_certificate /etc/letsencrypt/live/api.example.com/fullchain.pem;
   ssl_certificate_key /etc/letsencrypt/live/api.example.com/privkey.pem;
