@@ -771,9 +771,30 @@ func main() {
 		"realpath": func(path string) string {
 			absPath, err := filepath.Abs(path)
 			if err != nil {
-				return ""
+				panic(err)
 			}
 			return absPath
+		},
+		"container_mount_source_abs": func(mountPath string, joinElem ...string) string {
+			p := ""
+			for _, mount := range containerMounts {
+				if mount.Destination == mountPath {
+					p = mount.Source
+				}
+			}
+			if p == "" {
+				return ""
+			}
+			if len(joinElem) > 0 {
+				elems := append([]string{p}, joinElem...)
+				p = filepath.Join(elems...)
+				var err error
+				p, err = filepath.Abs(p)
+				if err != nil {
+					panic(err)
+				}
+			}
+			return p
 		},
 	}
 	sigil.Register(tmplFuncs)
