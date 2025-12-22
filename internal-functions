@@ -132,7 +132,7 @@ fn-get-data-dir() {
   user_defined_data_dir=$(fn-get-property --app "$APP" "data-dir")
   DATA_DIR=""
   if [[ -n "$user_defined_data_dir" ]]; then
-    DATA_DIR="$user_defined_data_dir/${PROXY_NAME}"
+    DATA_DIR="$user_defined_data_dir"
   else
     DATA_DIR="$DEFAULT_DATA_DIR"
   fi
