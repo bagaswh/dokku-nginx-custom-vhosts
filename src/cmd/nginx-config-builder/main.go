@@ -768,6 +768,13 @@ func main() {
 			}
 			return fmt.Sprintf("more_set_headers '%s: %s';", header, value)
 		},
+		"realpath": func(path string) string {
+			absPath, err := filepath.Abs(path)
+			if err != nil {
+				return ""
+			}
+			return absPath
+		},
 	}
 	sigil.Register(tmplFuncs)
 
