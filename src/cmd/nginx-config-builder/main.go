@@ -781,7 +781,7 @@ func main() {
 			if addHeaderMode == "add_header" {
 				return fmt.Sprintf("add_header %s %s always;", header, value)
 			}
-			return fmt.Sprintf("more_set_headers '%s: %s';", header, value)
+			return fmt.Sprintf("more_set_headers \"%s: %s\";", header, value)
 		},
 		"realpath": func(path string) string {
 			absPath, err := filepath.Abs(path)
