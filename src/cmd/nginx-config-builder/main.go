@@ -682,6 +682,14 @@ func resolveValue(v any, sysVars map[string]any, context string) (any, error) {
 	}
 }
 
+func prettyJSON(v any) string {
+	pretty, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	return string(pretty)
+}
+
 func main() {
 
 	var appName string
@@ -746,6 +754,7 @@ func main() {
 		"container_labels":      containerLabels,
 		"container_mounts":      containerMountsMap,
 	}
+	fmt.Printf("[VARDEBUG] SysVars=%s\n", prettyJSON(cfg.SysVars))
 
 	userVars, err := resolveUserVars(cfg.UserVars, map[string]any{
 		"sys_vars": cfg.SysVars,
@@ -754,12 +763,14 @@ func main() {
 		log.Fatalln("error resolving user vars:", err)
 	}
 	cfg.UserVars = userVars
+	fmt.Printf("[VARDEBUG] UserVars=%s\n", prettyJSON(cfg.UserVars))
 
 	addHeaderMode := mustEnv("NGINX_ADD_HEADER_MODE")
 	allowedAddHeaderModes := []string{"add_header", "more_set_headers"}
 	if !slices.Contains(allowedAddHeaderModes, addHeaderMode) {
 		log.Fatalln("NGINX_ADD_HEADER_MODE must be one of:", allowedAddHeaderModes)
 	}
+	fmt.Printf("[VARDEBUG] addHeaderMode=%s\n", addHeaderMode)
 
 	tmplFuncs := map[string]any{
 		"nginx_add_header": func(header string, value string) string {
@@ -802,6 +813,7 @@ func main() {
 	if appListenersUnmarshalErr != nil {
 		log.Fatalln("error unmarshaling app listeners:", appListenersUnmarshalErr)
 	}
+	fmt.Printf("[VARDEBUG] appListeners=%s\n", prettyJSON(appListeners))
 
 	tmplData := upstreamConfigTemplateData{
 		App:          appName,
