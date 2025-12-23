@@ -183,7 +183,7 @@ nginx_purge_cache() {
   export FASTCGI_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-fastcgi-cache-on-disk-root-path "$APP")"
   export FASTCGI_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-fastcgi-cache-in-mem-root-path "$APP")"
 
-  $_DIR/cache-purger \
+  sudo $_DIR/cache-purger \
     -config "$nginx_config" \
     -proxy-caches "$proxy_caches_to_purge" \
     -fastcgi-caches "$fastcgi_caches_to_purge" \
