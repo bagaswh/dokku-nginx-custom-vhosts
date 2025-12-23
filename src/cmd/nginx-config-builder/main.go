@@ -895,7 +895,6 @@ func main() {
 	if err != nil {
 		log.Fatalln("failed to build location config:", err)
 	}
-	fmt.Printf("[VARDEBUG] locationConfigs=%s\n", prettyJSON(locationConfigs))
 
 	latestReleaseDir, err := getCurrentConfigVersionDirectory(nginxConfigDirectory)
 	if err != nil {
@@ -916,6 +915,7 @@ func main() {
 
 	for vhost, locationConfig := range locationConfigs {
 		configFiles[fmt.Sprintf("vhosts/%s/vhost.conf", vhost)] = locationConfig
+		fmt.Printf("[VARDEBUG] location config for vhost %s: %s\n", vhost, locationConfig)
 	}
 
 	for filename, content := range configFiles {
