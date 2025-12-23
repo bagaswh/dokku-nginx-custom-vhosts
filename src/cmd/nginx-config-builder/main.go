@@ -869,16 +869,22 @@ func main() {
 	if err != nil {
 		log.Fatalln("failed to build proxy cache config:", err)
 	}
+	fmt.Printf("[VARDEBUG] proxyCaches=%s\n", prettyJSON(proxyCaches))
+	fmt.Printf("[VARDEBUG] proxyCacheCfgStr=%s\n", proxyCacheCfgStr)
 
 	fastcgiCacheCfgStr, fastcgiCaches, err := buildFastcgiCacheConfig(appName, buildProxyCacheConfigData, cfg)
 	if err != nil {
 		log.Fatalln("failed to build fastcgi cache config:", err)
 	}
+	fmt.Printf("[VARDEBUG] fastcgiCaches=%s\n", prettyJSON(fastcgiCaches))
+	fmt.Printf("[VARDEBUG] fastcgiCacheCfgStr=%s\n", fastcgiCacheCfgStr)
 
 	mapCfgStr, mapResultingVariables, err := buildMapConfig(appName, cfg)
 	if err != nil {
 		log.Fatalln("failed to build map config:", err)
 	}
+	fmt.Printf("[VARDEBUG] mapCfgStr=%s\n", mapCfgStr)
+	fmt.Printf("[VARDEBUG] mapResultingVariables=%s\n", prettyJSON(mapResultingVariables))
 
 	locationConfigs, err := buildLocationConfig(appName, cfg, &locationConfigData{
 		upstreams:     upstreams,
@@ -889,6 +895,7 @@ func main() {
 	if err != nil {
 		log.Fatalln("failed to build location config:", err)
 	}
+	fmt.Printf("[VARDEBUG] locationConfigs=%s\n", prettyJSON(locationConfigs))
 
 	latestReleaseDir, err := getCurrentConfigVersionDirectory(nginxConfigDirectory)
 	if err != nil {
