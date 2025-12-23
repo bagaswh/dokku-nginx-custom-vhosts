@@ -30,8 +30,9 @@ func mustEnv(name string) string {
 }
 
 type upstreamConfigTemplateData struct {
-	AppListeners map[string][]string `json:"AppListeners"`
-	App          string              `json:"App"`
+	UpstreamPorts []string            `json:"UpstreamPorts"`
+	AppListeners  map[string][]string `json:"AppListeners"`
+	App           string              `json:"App"`
 }
 
 type upstreamServer struct {
@@ -99,19 +100,11 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 	upstreamResultingNames := make(upstreamResultingNames, 0)
 
 	// default upstreams
-	for processType, listeners := range data.AppListeners {
-		for _, listener := range listeners {
-			listenerSplit := strings.Split(listener, ":")
-			if len(listenerSplit) != 2 {
-				fmt.Printf("[warn] failed to parse listener %s\n", listener)
-				continue
-			}
-			port := listenerSplit[1]
-
+	for _, port := range data.UpstreamPorts {
+		for processType, listeners := range data.AppListeners {
 			refName := fmt.Sprintf("%s-%s", processType, port)
 			generatedUpstreamName := fmt.Sprintf("%s-%s", appName, refName)
 			upstreamResultingNames[refName] = generatedUpstreamName
-
 			if processType == "web" {
 				refNameDefault := fmt.Sprintf("default-%s", port)
 				upstreamResultingNames[refNameDefault] = generatedUpstreamName
@@ -130,10 +123,17 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 				uc = upstreamConfigs[refName]
 			}
 
-			addr := listenerSplit[0]
-			uc.Servers = append(uc.Servers, upstreamServer{
-				Addr: fmt.Sprintf("%s:%s", addr, port),
-			})
+			for _, listener := range listeners {
+				listenerSplit := strings.Split(listener, ":")
+				if len(listenerSplit) != 2 {
+					fmt.Printf("[warn] failed to parse listener %s\n", listener)
+					continue
+				}
+				addr := listenerSplit[0]
+				uc.Servers = append(uc.Servers, upstreamServer{
+					Addr: fmt.Sprintf("%s:%s", addr, port),
+				})
+			}
 		}
 	}
 
@@ -813,11 +813,12 @@ func main() {
 	if appListenersUnmarshalErr != nil {
 		log.Fatalln("error unmarshaling app listeners:", appListenersUnmarshalErr)
 	}
-	fmt.Printf("[VARDEBUG] appListeners=%s\n", prettyJSON(appListeners))
+	fmt.Printf("[VARDEBUG] appListeners computed=%s\n", prettyJSON(appListeners))
 
 	tmplData := upstreamConfigTemplateData{
-		App:          appName,
-		AppListeners: appListeners,
+		App:           appName,
+		AppListeners:  appListeners,
+		UpstreamPorts: strings.Split(os.Getenv("PROXY_UPSTREAM_PORTS"), " "),
 	}
 
 	upstreamCfgStr, upstreams, err := buildUpstreamConfig(appName, cfg, &tmplData)
@@ -825,6 +826,8 @@ func main() {
 		log.Fatalln("failed to build upstream config:", err)
 	}
 	_ = upstreamCfgStr
+	fmt.Printf("[VARDEBUG] upstreams=%s\n", prettyJSON(upstreams))
+	fmt.Printf("[VARDEBUG] upstreamCfgStr=%s\n", upstreamCfgStr)
 
 	proxyCacheDefaultFlags := make(map[string]string)
 	for _, flag := range strings.Split(os.Getenv("PROXY_CACHE_DEFAULT_FLAGS"), " ") {

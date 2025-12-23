@@ -95,16 +95,36 @@ get_app_listeners_json() {
   echo "$json"
 }
 
+get_upstream_ports() {
+    local PORT_MAP PROXY_PORT_MAP proxy_port_map
+    while read -r PORT_MAP; do
+      local PROXY_UPSTREAM_SCHEME="$(awk -F ':' '{ print $1 }' <<<"$PORT_MAP")"
+      if [[ "$PROXY_UPSTREAM_SCHEME" == "https" ]] && [[ "$IS_SSL_ENABLED" == "false" ]]; then
+        dokku_log_warn "Ignoring detected https port mapping without an accompanying ssl certificate (${PORT_MAP})"
+        continue
+      fi
+
+      proxy_port_map="$proxy_port_map $PORT_MAP"
+
+      local PROXY_UPSTREAM_PORT="$(awk -F ':' '{ print $3 }' <<<"$PORT_MAP")"
+      if [[ "$(is_val_in_list "$PROXY_UPSTREAM_PORT" "$PROXY_UPSTREAM_PORTS" " ")" == "false" ]]; then
+        local PROXY_UPSTREAM_PORTS+="$PROXY_UPSTREAM_PORT "
+      fi
+    done < <(plugn trigger ports-get "$APP")
+    PROXY_PORT_MAP="$(echo "$proxy_port_map" | xargs)" # trailing spaces mess up default template
+    echo "$PROXY_UPSTREAM_PORTS" | xargs
+}
+
 nginx_build_config() {
   declare desc="build nginx config to proxy app containers using sigil"
   declare APP="$1"
+
+  plugn trigger ports-configure "$APP"
 
   DOKKU_PROCESS_TYPES="$(get_process_types "$APP")"
   DOKKU_APP_LISTENERS="$(get_app_listeners_json "$APP" "$DOKKU_PROCESS_TYPES")"
 
   echo -e "DOKKU_APP_LISTENERS: $DOKKU_APP_LISTENERS"
-
-  plugn trigger ports-configure "$APP"
 
   nginx_test_command="sudo nginx -t"
   if fn-nginx-custom-uses-openresty; then
@@ -125,6 +145,8 @@ nginx_build_config() {
   export PROXY_CACHE_DEFAULT_KEY_ZONE_SIZE="$(fn-nginx-custom-proxy-cache-default-key-zone-size "$APP")"
   export FASTCGI_CACHE_DEFAULT_KEY_ZONE_SIZE="$(fn-nginx-custom-fastcgi-cache-default-key-zone-size "$APP")"
   export DOKKU_APP_CONTAINER_WORKING_DIR_PATH="$(app_container_get_working_dir_path "$APP" "$container")"
+  export PROXY_UPSTREAM_PORTS="$(get_upstream_ports)"
+  echo "PROXY_UPSTREAM_PORTS: $PROXY_UPSTREAM_PORTS"
   export NGINX_ADD_HEADER_MODE="$(fn-nginx-custom-add-header-mode "$APP")"
   "$_DIR/nginx-config-builder" \
     -app-name "$APP" \
