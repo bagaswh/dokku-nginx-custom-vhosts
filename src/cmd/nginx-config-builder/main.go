@@ -690,6 +690,10 @@ func prettyJSON(v any) string {
 	return string(pretty)
 }
 
+func normalizePath(path string) string {
+	return filepath.Clean(path)
+}
+
 func main() {
 
 	var appName string
@@ -787,6 +791,7 @@ func main() {
 			return absPath
 		},
 		"container_mount_source_abs": func(mountPath string, joinElem ...string) string {
+			mountPath = normalizePath(mountPath)
 			p := ""
 			if mnt, ok := containerMountsMap[mountPath]; ok {
 				p = mnt.Source
