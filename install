@@ -53,7 +53,7 @@ trigger-nginx-custom-install() {
         echo "%dokku ALL=(ALL) NOPASSWD:/etc/init.d/$NGINX_INIT_NAME enable, /etc/init.d/$NGINX_INIT_NAME disable, /etc/init.d/$NGINX_INIT_NAME reload, /etc/init.d/$NGINX_INIT_NAME start, /etc/init.d/$NGINX_INIT_NAME stop, $NGINX_BIN -t, $NGINX_BIN -t -c *" >"$NGINX_SUDOERS_FILE"
       fi
 
-      echo "%dokku ALL=(ALL) NOPASSWD: $_DIR/cache-purger" >"$DOKKU_SUDOERS_FILE"
+      echo "%dokku ALL=(ALL) NOPASSWD:SETENV: $_DIR/cache-purger" >"$DOKKU_SUDOERS_FILE"
       ;;
 
     arch)
