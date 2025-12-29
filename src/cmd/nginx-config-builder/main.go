@@ -820,10 +820,10 @@ func main() {
 	}
 	fmt.Printf("[VARDEBUG] appListeners computed=%s\n", prettyJSON(appListeners))
 	webListeners, ok := appListeners["web"]
-	if ok && len(webListeners) == 1 && webListeners[0] == "invalid" {
+	if ok && len(webListeners) > 0 && webListeners[0] == "invalid" {
+		fmt.Printf("[VARDEBUG] invalid IP received, app listeners are empty")
 		appListeners = map[string][]string{}
 	}
-	fmt.Printf("[VARDEBUG] invalid IP received, app listeners are empty")
 
 	tmplData := upstreamConfigTemplateData{
 		App:           appName,
