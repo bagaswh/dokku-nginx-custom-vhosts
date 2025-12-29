@@ -819,6 +819,11 @@ func main() {
 		log.Fatalln("error unmarshaling app listeners:", appListenersUnmarshalErr)
 	}
 	fmt.Printf("[VARDEBUG] appListeners computed=%s\n", prettyJSON(appListeners))
+	webListeners, ok := appListeners["web"]
+	if ok && len(webListeners) == 1 && webListeners[0] == "invalid" {
+		appListeners = map[string][]string{}
+	}
+	fmt.Printf("[VARDEBUG] invalid IP received, app listeners are empty")
 
 	tmplData := upstreamConfigTemplateData{
 		App:           appName,
