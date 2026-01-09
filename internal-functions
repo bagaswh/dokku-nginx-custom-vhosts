@@ -124,6 +124,24 @@ fn-nginx-custom-fastcgi-cache-default-key-zone-size() {
   fn-get-property --app "$APP" --global "fastcgi-cache-default-key-zone-size"
 }
 
+fn-nginx-custom-nginx-access-log-root-dir() {
+  declare desc="retrieves nginx access log root dir from nginx-access-log-root-dir property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --global "nginx-access-log-root-dir"
+}
+
+fn-nginx-custom-nginx-error-log-root-dir() {
+  declare desc="retrieves nginx error log root dir from nginx-error-log-root-dir property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --global "nginx-error-log-root-dir"
+}
+
+fn-nginx-custom-nginx-default-access-log-format() {
+  declare desc="retrieves nginx default access log format from nginx-default-access-log-format property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --global "nginx-default-access-log-format"
+}
+
 fn-get-data-dir() {
   declare desc="get the data directory"
   declare APP="$1"

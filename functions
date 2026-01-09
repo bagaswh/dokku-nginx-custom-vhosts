@@ -148,6 +148,9 @@ nginx_build_config() {
   export PROXY_UPSTREAM_PORTS="$(get_upstream_ports)"
   echo "PROXY_UPSTREAM_PORTS: $PROXY_UPSTREAM_PORTS"
   export NGINX_ADD_HEADER_MODE="$(fn-nginx-custom-add-header-mode "$APP")"
+  export NGINX_ACCESS_LOG_ROOT_DIR="$(fn-nginx-custom-nginx-access-log-root-dir "$APP")"
+  export NGINX_ERROR_LOG_ROOT_DIR="$(fn-nginx-custom-nginx-error-log-root-dir "$APP")"
+  export NGINX_DEFAULT_ACCESS_LOG_FORMAT="$(fn-nginx-custom-nginx-default-access-log-format "$APP")"
   "$_DIR/nginx-config-builder" \
     -app-name "$APP" \
     -config-file-path "$(nginx_get_yaml_config_absolute_path "$APP")" \
@@ -177,11 +180,6 @@ nginx_purge_cache() {
 
   echo "proxy_caches_to_purge: $proxy_caches_to_purge"
   echo "fastcgi_caches_to_purge: $fastcgi_caches_to_purge"
-
-  export PROXY_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-proxy-cache-on-disk-root-path "$APP")"
-  export PROXY_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-proxy-cache-in-mem-root-path "$APP")"
-  export FASTCGI_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-fastcgi-cache-on-disk-root-path "$APP")"
-  export FASTCGI_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-fastcgi-cache-in-mem-root-path "$APP")"
 
   sudo PROXY_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-proxy-cache-on-disk-root-path "$APP")" \
     PROXY_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-proxy-cache-in-mem-root-path "$APP")" \

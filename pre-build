@@ -45,6 +45,17 @@ trigger-nginx-custom-pre-build() {
     dokku_log_fail "fastcgi-cache-default-key-zone-size is not set. Please set it to a valid value."
   fi
 
+
+  nginx_access_log_root_dir=$(fn-nginx-custom-nginx-access-log-root-dir "$APP")
+  if [[ -z "$nginx_access_log_root_dir" ]]; then
+    dokku_log_fail "nginx-access-log-root-dir is not set. Please set it to a valid path."
+  fi
+
+  nginx_error_log_root_dir=$(fn-nginx-custom-nginx-error-log-root-dir "$APP")
+  if [[ -z "$nginx_error_log_root_dir" ]]; then
+    dokku_log_fail "nginx-error-log-root-dir is not set. Please set it to a valid path."
+  fi
 }
+
 
 trigger-nginx-custom-pre-build "$@"

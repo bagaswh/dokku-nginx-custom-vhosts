@@ -21,12 +21,44 @@ import (
 	_ "github.com/gliderlabs/sigil/builtin"
 )
 
+var environs []string
+
 func mustEnv(name string) string {
-	value := os.Getenv(name)
-	if value == "" {
-		log.Fatalln("missing required env var:", name)
+	if environs == nil {
+		environs = os.Environ()
 	}
-	return value
+
+	for _, env := range environs {
+		split := strings.Split(env, "=")
+		var key, value string
+		if len(split) == 1 {
+			key = env
+		}
+		if len(split) == 2 {
+			key = split[0]
+			value = split[1]
+		}
+		if name == key {
+			return value
+		}
+	}
+
+	log.Fatalln("missing required env var:", name)
+	return ""
+}
+
+func mustEnvs(names ...string) {
+	for _, name := range names {
+		_ = mustEnv(name)
+	}
+}
+
+func envMustNonEmpty(name string) string {
+	env := mustEnv(name)
+	if env == "" {
+		log.Fatalf("missing required value for env %s\n", name)
+	}
+	return env
 }
 
 type upstreamConfigTemplateData struct {
@@ -47,52 +79,6 @@ type upstreamConfig struct {
 }
 
 type upstreamResultingNames map[string]string
-
-// func applyDirectivesToPredefinedUpstreams(appName string, config *file_config.Config, data *upstreamConfigTemplateData, upstreamConfigs map[string]*upstreamConfig) {
-// 	// apply directives to predefined upstreams
-// 	for _, upstreamCfg := range config.Upstreams {
-// 		var ucs []*upstreamConfig
-// 		if upstreamCfg.SelectProcessType != "" {
-// 			continue
-// 		}
-
-// 		if upstreamCfg.SelectDefaultPort != 0 {
-// 			uc, ok := upstreamConfigs[fmt.Sprintf("default-%d", upstreamCfg.SelectDefaultPort)]
-// 			if !ok {
-// 				return "", nil, fmt.Errorf("failed to find upstream config for port %d", upstreamCfg.SelectDefaultPort)
-// 			}
-// 			ucs = append(ucs, uc)
-// 		} else {
-// 			for _, uc := range upstreamConfigs {
-// 				ucs = append(ucs, uc)
-// 			}
-// 		}
-
-// 		if upstreamCfg.DefaultServersFlags != nil {
-// 			for _, serverFlagCfg := range upstreamCfg.DefaultServersFlags {
-// 				for _, uc := range ucs {
-// 					if serverFlagCfg.Selector == "" {
-// 						for i := range uc.Servers {
-// 							// empty selector field means all servers apply
-// 							mergo.Merge(&uc.Servers[i].Flags, serverFlagCfg.Flags, mergo.WithOverride)
-// 						}
-// 					} else {
-// 						for i, server := range uc.Servers {
-// 							regex, err := regexp.Compile(serverFlagCfg.Selector)
-// 							if err != nil {
-// 								return "", nil, fmt.Errorf("failed to compile regex: %v", err)
-// 							}
-// 							if regex.MatchString(server.Addr) {
-// 								mergo.Merge(&uc.Servers[i].Flags, serverFlagCfg.Flags, mergo.WithOverride)
-// 							}
-// 						}
-// 					}
-// 				}
-// 			}
-// 		}
-// 	}
-
-// }
 
 func buildUpstreamConfig(appName string, config *file_config.Config, data *upstreamConfigTemplateData) (string, upstreamResultingNames, error) {
 	upstreamConfigs := make(map[string]*upstreamConfig, 0)
@@ -429,9 +415,6 @@ location {{ $.modifier }}{{ if $.named }}@{{ $.named }}{{ else }}{{ $.uri }}{{ e
 		}
 
 		for _, location := range vhost.Locations {
-			// if location.Include != "" {
-			// 	continue
-			// }
 
 			modifierOut, err := sigil.Execute([]byte(location.Modifier), bodyTmplData, fmt.Sprintf("location_modifier_vhost_%s_uri_%s", vhost.ServerName, location.Uri))
 			if err != nil {
@@ -610,22 +593,6 @@ func testNginxConfig(nginxTestCommand string) error {
 	return nil
 }
 
-func rollbackToPrevious(nginxConfigDirectory string, previousDir string) error {
-	if previousDir == "" {
-		// No previous version to rollback to, just remove current symlink
-		currentSymlink := path.Join(nginxConfigDirectory, "current")
-		if _, err := os.Lstat(currentSymlink); err == nil {
-			if err := os.Remove(currentSymlink); err != nil {
-				return fmt.Errorf("failed to remove current symlink during rollback: %w", err)
-			}
-		}
-		return nil
-	}
-
-	// Rollback to previous version
-	return updateCurrentSymlink(nginxConfigDirectory, previousDir)
-}
-
 func resolveUserVars(userVars map[string]any, sysVars map[string]any) (map[string]any, error) {
 	resolvedUserVars := make(map[string]any)
 	for k, v := range userVars {
@@ -719,7 +686,27 @@ func main() {
 		}
 	}
 
-	nginxWorkingDirectory = path.Join(dokkuAppDataRootDirectory, fmt.Sprintf("%s-config", mustEnv("PROXY_NAME")))
+	mustEnvs(
+		"PROXY_NAME",
+		"DOKKU_APP_CONTAINER_LABELS",
+		"DOKKU_APP_CONTAINER_MOUNTS",
+		"DOKKU_APP_LISTENERS",
+		"PROXY_UPSTREAM_PORTS",
+		"PROXY_CACHE_DEFAULT_FLAGS",
+		"FASTCGI_CACHE_DEFAULT_FLAGS",
+		"PROXY_CACHE_ON_DISK_ROOT_PATH",
+		"PROXY_CACHE_IN_MEM_ROOT_PATH",
+		"FASTCGI_CACHE_ON_DISK_ROOT_PATH",
+		"FASTCGI_CACHE_IN_MEM_ROOT_PATH",
+		"PROXY_CACHE_DEFAULT_KEY_ZONE_SIZE",
+		"FASTCGI_CACHE_DEFAULT_KEY_ZONE_SIZE",
+		"DOKKU_APP_CONTAINER_WORKING_DIR_PATH",
+		"NGINX_ADD_HEADER_MODE",
+		"NGINX_ACCESS_LOG_ROOT_DIR",
+		"NGINX_ERROR_LOG_ROOT_DIR",
+	)
+
+	nginxWorkingDirectory = path.Join(dokkuAppDataRootDirectory, fmt.Sprintf("%s-config", envMustNonEmpty("PROXY_NAME")))
 	nginxConfigDirectory := path.Join(nginxWorkingDirectory, "conf.d")
 
 	cfg, _, readConfigFileErr := file_config.ReadConfig(configFilePath)
@@ -757,6 +744,7 @@ func main() {
 		"container_working_dir": os.Getenv("DOKKU_APP_CONTAINER_WORKING_DIR_PATH"),
 		"container_labels":      containerLabels,
 		"container_mounts":      containerMountsMap,
+		"app_name":              appName,
 	}
 	fmt.Printf("[VARDEBUG] SysVars=%s\n", prettyJSON(cfg.SysVars))
 
@@ -769,7 +757,7 @@ func main() {
 	cfg.UserVars = userVars
 	fmt.Printf("[VARDEBUG] UserVars=%s\n", prettyJSON(cfg.UserVars))
 
-	addHeaderMode := mustEnv("NGINX_ADD_HEADER_MODE")
+	addHeaderMode := envMustNonEmpty("NGINX_ADD_HEADER_MODE")
 	allowedAddHeaderModes := []string{"add_header", "more_set_headers"}
 	if !slices.Contains(allowedAddHeaderModes, addHeaderMode) {
 		log.Fatalln("NGINX_ADD_HEADER_MODE must be one of:", allowedAddHeaderModes)
@@ -782,6 +770,38 @@ func main() {
 				return fmt.Sprintf("add_header %s %s always;", header, value)
 			}
 			return fmt.Sprintf("more_set_headers \"%s: %s\";", header, value)
+		},
+		"nginx_log": func(params ...string) string {
+			if len(params) < 1 {
+				panic("nginx_log function requires at least one parameter. If given one parameter, it will be treated as the log type. If given two parameters, the first will be the log type and the second will be the filename. If filename parameter is omitted, it defaults to the <app_name>.log. If given 3 parameters, the 3rd parameter will be the access log format.")
+			}
+
+			var typ, filename, accessLogFormat string
+			typ = params[0]
+			if len(params) == 2 {
+				filename = params[1]
+			}
+			if filename == "" {
+				filename = fmt.Sprintf("%s.log", appName)
+			}
+			if len(params) == 3 {
+				accessLogFormat = params[2]
+			}
+			if accessLogFormat == "" {
+				accessLogFormat = os.Getenv("NGINX_DEFAULT_ACCESS_LOG_FORMAT")
+			}
+
+			nginxAccessLogRootDir := envMustNonEmpty("NGINX_ACCESS_LOG_ROOT_DIR")
+			nginxErrorLogRootDir := envMustNonEmpty("NGINX_ERROR_LOG_ROOT_DIR")
+
+			switch typ {
+			case "access":
+				return fmt.Sprintf("access_log %s/%s %s;", nginxAccessLogRootDir, filename, accessLogFormat)
+			case "error":
+				return fmt.Sprintf("error_log %s/%s;", nginxErrorLogRootDir, filename)
+			default:
+				panic(fmt.Errorf("invalid log type %q", typ))
+			}
 		},
 		"realpath": func(path string) string {
 			absPath, err := filepath.Abs(path)
@@ -864,15 +884,15 @@ func main() {
 	}
 
 	buildProxyCacheConfigData := buildProxyCacheConfigData{
-		proxyCacheOnDiskRootPath: mustEnv("PROXY_CACHE_ON_DISK_ROOT_PATH"),
-		proxyCacheInMemRootPath:  mustEnv("PROXY_CACHE_IN_MEM_ROOT_PATH"),
+		proxyCacheOnDiskRootPath: envMustNonEmpty("PROXY_CACHE_ON_DISK_ROOT_PATH"),
+		proxyCacheInMemRootPath:  envMustNonEmpty("PROXY_CACHE_IN_MEM_ROOT_PATH"),
 		proxyCacheDefaultFlags:   proxyCacheDefaultFlags,
-		proxyCacheKeyZoneSize:    mustEnv("PROXY_CACHE_DEFAULT_KEY_ZONE_SIZE"),
+		proxyCacheKeyZoneSize:    envMustNonEmpty("PROXY_CACHE_DEFAULT_KEY_ZONE_SIZE"),
 
-		fastcgiOnDiskRootPath: mustEnv("FASTCGI_CACHE_ON_DISK_ROOT_PATH"),
-		fastcgiInMemRootPath:  mustEnv("FASTCGI_CACHE_IN_MEM_ROOT_PATH"),
+		fastcgiOnDiskRootPath: envMustNonEmpty("FASTCGI_CACHE_ON_DISK_ROOT_PATH"),
+		fastcgiInMemRootPath:  envMustNonEmpty("FASTCGI_CACHE_IN_MEM_ROOT_PATH"),
 		fastcgiDefaultFlags:   fastcgiCacheDefaultFlags,
-		fastcgiKeyZoneSize:    mustEnv("FASTCGI_CACHE_DEFAULT_KEY_ZONE_SIZE"),
+		fastcgiKeyZoneSize:    envMustNonEmpty("FASTCGI_CACHE_DEFAULT_KEY_ZONE_SIZE"),
 	}
 
 	proxyCacheCfgStr, proxyCaches, err := buildProxyCacheConfig(appName, buildProxyCacheConfigData, cfg)
@@ -940,13 +960,7 @@ func main() {
 
 	if !withoutNginxTest {
 		if err := testNginxConfig(nginxTestCommand); err != nil {
-			log.Printf("nginx config test failed, rolling back: %v", err)
-
-			// if rollbackErr := rollbackToPrevious(nginxConfigDirectory, previousDir); rollbackErr != nil {
-			// 	log.Fatalln("failed to rollback to previous version:", rollbackErr)
-			// }
-
-			log.Fatalln("nginx config test failed:", err)
+			log.Fatalf("nginx config test failed: %v\n", err)
 		}
 	}
 	log.Println("nginx configuration deployed successfully")
