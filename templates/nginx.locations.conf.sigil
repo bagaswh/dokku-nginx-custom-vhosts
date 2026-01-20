@@ -1,0 +1,57 @@
+  
+  
+  location    /{{ $.NGINX_APP_PATH }} {
+
+    access_log  {{ $.NGINX_ACCESS_LOG_PATH }}{{ if and ($.NGINX_ACCESS_LOG_FORMAT) (ne $.NGINX_ACCESS_LOG_PATH "off") }} {{ $.NGINX_ACCESS_LOG_FORMAT }}{{ end }};
+    error_log   {{ $.NGINX_ERROR_LOG_PATH }};
+
+    # Ensure 5xx errors are routed to custom error page
+    # Otherwise we risk showing sensitive information, e.g. when the code shows stack trace or, worse, environemnt variables, on 5xx errors
+    error_page 500 501 502 503 504 505 506 507 508 509 510 511 {{ $.NGINX_ERROR_PAGE_500_PATH }};
+
+    {{ if $.NGINX_GZIP_ENABLED }}
+
+    gzip on;
+    gzip_min_length  1100;
+    gzip_buffers  4 32k;
+    gzip_types    text/css text/javascript text/xml text/plain text/x-component application/javascript application/x-javascript application/wasm application/json application/xml application/rss+xml font/truetype application/x-font-ttf font/opentype application/vnd.ms-fontobject image/svg+xml;
+    gzip_vary on;
+    gzip_comp_level  6;
+
+    {{ end }}
+
+    {{ if $.NGINX_BROTLI_ENABLED }}
+
+    brotli on;
+    brotli_comp_level 6;
+    brotli_static on;
+    brotli_types text/plain text/css application/javascript application/x-javascript text/xml application/xml application/xml+rss text/javascript application/json image/svg+xml;
+
+    {{ end }}
+
+    {{ if $.NGINX_ZSTD_ENABLED }}
+
+    zstd on;
+    zstd_min_length 256;
+    zstd_comp_level 6;
+
+    {{ end }}
+
+    proxy_pass  http://{{ $.APP }}-{{ $upstream_port }};
+    proxy_http_version 1.1;
+    {{ if $.PROXY_CONNECT_TIMEOUT }}proxy_connect_timeout {{ $.PROXY_CONNECT_TIMEOUT }};{{end}}
+    {{ if $.PROXY_READ_TIMEOUT }}proxy_read_timeout {{ $.PROXY_READ_TIMEOUT }};{{end}}
+    {{ if $.PROXY_SEND_TIMEOUT }}proxy_send_timeout {{ $.PROXY_SEND_TIMEOUT }};{{end}}
+    proxy_buffer_size {{ $.PROXY_BUFFER_SIZE }};
+    proxy_buffering {{ $.PROXY_BUFFERING }};
+    proxy_buffers {{ $.PROXY_BUFFERS }};
+    proxy_busy_buffers_size {{ $.PROXY_BUSY_BUFFERS_SIZE }};
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $http_connection;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-For {{ $.PROXY_X_FORWARDED_FOR }};
+    proxy_set_header X-Forwarded-Port {{ $.PROXY_X_FORWARDED_PORT }};
+    proxy_set_header X-Forwarded-Proto {{ $.PROXY_X_FORWARDED_PROTO }};
+    proxy_set_header X-Request-Start $msec;
+    {{ if $.PROXY_X_FORWARDED_SSL }}proxy_set_header X-Forwarded-Ssl {{ $.PROXY_X_FORWARDED_SSL }};{{ end }}
+  }

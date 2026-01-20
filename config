@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+export PROXY_NAME="nginx-custom"

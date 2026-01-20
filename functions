@@ -1,0 +1,323 @@
+#!/usr/bin/env bash
+set -eo pipefail
+[[ $DOKKU_TRACE ]] && set -x
+_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_DIR/config"
+source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
+source "$PLUGIN_AVAILABLE_PATH/certs/functions"
+source "$PLUGIN_AVAILABLE_PATH/config/functions"
+source "$_DIR/internal-functions"
+
+
+
+get_nginx_location() {
+  declare desc="check that nginx is at the expected location and return it"
+  fn-nginx-custom-nginx-location
+}
+
+get_app_proxy_type() {
+  local APP="$1"
+  type=$(plugn trigger proxy-type "$APP")
+  proxy_is_enabled=$(plugn trigger proxy-is-enabled "$APP")
+  if [[ "$proxy_is_enabled" == "false" ]]; then
+    echo ""
+  fi
+  echo "$type"
+}
+
+restart_nginx() {
+  declare desc="restart nginx for given distros"
+  declare APP="$1"
+
+  nginx_restart_command="$(fn-get-property --app "$APP" --global "nginx-restart-command")"
+  if [[ -n "$nginx_restart_command" ]]; then
+    eval "$nginx_restart_command"
+    return $?
+  fi
+
+  if fn-nginx-custom-uses-openresty; then
+    command="/usr/bin/systemctl reload openresty"
+  else 
+    command="/usr/bin/systemctl reload nginx"
+  fi
+
+  set -x
+  trap "set +x" EXIT
+
+  run_with_sudo="$(fn-get-property --app "$APP" --global "nginx-restart-command-run-with-sudo")"
+  if [[ "$run_with_sudo" == "true" ]] || [[ -z "$run_with_sudo" ]]; then
+    sudo $command
+  else
+    $command
+  fi
+
+}
+
+get_process_types() {
+  declare desc="get process types for given app"
+  declare APP="$1"
+
+  plugn trigger ps-current-scale "$APP" | grep -oP '\w+(?==)' | xargs
+}
+
+get_app_listeners_json() {
+  declare desc="build JSON dictionary of listeners by process type"
+  declare APP="$1"
+  declare PROCESS_TYPES="$2"
+  declare UPSTREAM_ADDRESS_MODE="$3"
+
+  if [[ -z "$UPSTREAM_ADDRESS_MODE" ]]; then
+    UPSTREAM_ADDRESS_MODE="ip"
+  fi
+  
+  local json="{"
+  local first=true
+  
+  for process_type in $PROCESS_TYPES; do
+    local listeners=""
+    if [[ "$UPSTREAM_ADDRESS_MODE" == "ip" ]]; then
+      listeners="$(plugn trigger network-get-listeners "$APP" "$process_type" | xargs)"
+    else
+      containers="$(app_containers_get "$APP" --filter="label=com.dokku.process-type=$process_type")"
+      for container in $containers; do
+        listeners+="$(get_container_dns_names "$container" "$process_type") "
+      done
+    fi
+    
+    if [[ "$first" != "true" ]]; then
+      json+=", "
+    fi
+    first=false
+    
+    # Build JSON array of listeners
+    local listener_array="["
+    if [[ -n "$listeners" ]]; then
+      local first_listener=true
+      for listener in $listeners; do
+        if [[ "$first_listener" != "true" ]]; then
+          listener_array+=", "
+        fi
+        first_listener=false
+        listener_array+="\"$listener\""
+      done
+    fi
+    listener_array+="]"
+    
+    json+="\"$process_type\": $listener_array"
+  done
+  json+="}"
+  
+  echo "$json"
+}
+
+get_upstream_ports() {
+    local PORT_MAP PROXY_PORT_MAP proxy_port_map
+    while read -r PORT_MAP; do
+      local PROXY_UPSTREAM_SCHEME="$(awk -F ':' '{ print $1 }' <<<"$PORT_MAP")"
+      if [[ "$PROXY_UPSTREAM_SCHEME" == "https" ]] && [[ "$IS_SSL_ENABLED" == "false" ]]; then
+        dokku_log_warn "Ignoring detected https port mapping without an accompanying ssl certificate (${PORT_MAP})"
+        continue
+      fi
+
+      proxy_port_map="$proxy_port_map $PORT_MAP"
+
+      local PROXY_UPSTREAM_PORT="$(awk -F ':' '{ print $3 }' <<<"$PORT_MAP")"
+      if [[ "$(is_val_in_list "$PROXY_UPSTREAM_PORT" "$PROXY_UPSTREAM_PORTS" " ")" == "false" ]]; then
+        local PROXY_UPSTREAM_PORTS+="$PROXY_UPSTREAM_PORT "
+      fi
+    done < <(plugn trigger ports-get "$APP")
+    PROXY_PORT_MAP="$(echo "$proxy_port_map" | xargs)" # trailing spaces mess up default template
+    echo "$PROXY_UPSTREAM_PORTS" | xargs
+}
+
+# Do not call this except after the containers are running
+# since it will try to inspect the running containers
+nginx_build_config() {
+  declare desc="build nginx config to proxy app containers using sigil"
+  declare APP="$1"
+
+  plugn trigger ports-configure "$APP"
+
+  DOKKU_PROCESS_TYPES="$(get_process_types "$APP")"
+  UPSTREAM_ADDRESS_MODE="$(nginx-config-get-upstream-address-mode "$APP")"
+  DOKKU_APP_LISTENERS="$(get_app_listeners_json "$APP" "$DOKKU_PROCESS_TYPES" "$UPSTREAM_ADDRESS_MODE")"
+
+  echo -e "DOKKU_APP_LISTENERS: $DOKKU_APP_LISTENERS"
+
+  nginx_test_command="sudo nginx -t"
+  if fn-nginx-custom-uses-openresty; then
+    nginx_test_command="sudo openresty -t"
+  fi
+
+  # Getting one container is enough since we only use this to get labels and mounts, which mostly are the same
+  # for all containers.
+  container="$(app_container_get "$APP")"
+
+  export DOKKU_APP_CONTAINER_LABELS="$(container_get_labels "$container")"
+  export DOKKU_APP_CONTAINER_MOUNTS="$(container_get_mounts "$container")"
+  export DOKKU_APP_LISTENERS
+  export PROXY_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-proxy-cache-on-disk-root-path "$APP")"
+  export PROXY_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-proxy-cache-in-mem-root-path "$APP")"
+  export FASTCGI_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-fastcgi-cache-on-disk-root-path "$APP")"
+  export FASTCGI_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-fastcgi-cache-in-mem-root-path "$APP")"
+  export PROXY_CACHE_DEFAULT_FLAGS="$(fn-nginx-custom-proxy-cache-default-flags "$APP")"
+  export FASTCGI_CACHE_DEFAULT_FLAGS="$(fn-nginx-custom-fastcgi-cache-default-flags "$APP")"
+  export PROXY_CACHE_DEFAULT_KEY_ZONE_SIZE="$(fn-nginx-custom-proxy-cache-default-key-zone-size "$APP")"
+  export FASTCGI_CACHE_DEFAULT_KEY_ZONE_SIZE="$(fn-nginx-custom-fastcgi-cache-default-key-zone-size "$APP")"
+  export PROXY_UPSTREAM_PORTS="$(get_upstream_ports)"
+  echo "PROXY_UPSTREAM_PORTS: $PROXY_UPSTREAM_PORTS"
+  export NGINX_ADD_HEADER_MODE="$(fn-nginx-custom-add-header-mode "$APP")"
+  export NGINX_ACCESS_LOG_ROOT_DIR="$(fn-nginx-custom-nginx-access-log-root-dir "$APP")"
+  export NGINX_ERROR_LOG_ROOT_DIR="$(fn-nginx-custom-nginx-error-log-root-dir "$APP")"
+  export NGINX_DEFAULT_ACCESS_LOG_FORMAT="$(fn-nginx-custom-nginx-default-access-log-format "$APP")"
+  "$_DIR/nginx-config-builder" \
+    -app-name "$APP" \
+    -config-file-path "$(nginx_get_yaml_config_absolute_path "$APP")" \
+    -dokku-data-root-directory "$(fn-get-data-dir $APP)/app-${APP}" \
+    -nginx-test-command "$nginx_test_command"
+}
+
+nginx_yaml_get_config() {
+  declare desc="get nginx config from yaml file"
+  declare APP="$1" KEY="$2"
+
+  nginx_config="$(nginx_get_yaml_config_absolute_path "$APP")"
+  "$_DIR/file-config" -config "$nginx_config" "$KEY"
+}
+
+nginx_purge_cache() {
+  declare desc="purge nginx cache"
+  declare APP="$1"
+
+  nginx_config="$(nginx_get_yaml_config_absolute_path "$APP")"
+  
+  # Query proxy_caches entries where purge_on_deploy is true, get names as comma-separated
+  if [[ "$($_DIR/file-config -config "$nginx_config" proxy_caches)" != "null" ]]; then
+    proxy_caches_to_purge="$($_DIR/file-config -config "$nginx_config" "join(',', proxy_caches[?purge_on_deploy == \`true\`].name)")"
+  else
+    proxy_caches_to_purge=""
+  fi
+  
+  # Query fastcgi_caches entries where purge_on_deploy is true, get names as comma-separated
+  if [[ "$($_DIR/file-config -config "$nginx_config" fastcgi_caches)" != "null" ]]; then
+    fastcgi_caches_to_purge="$($_DIR/file-config -config "$nginx_config" "join(',', fastcgi_caches[?purge_on_deploy == \`true\`].name)")"
+  else
+    fastcgi_caches_to_purge=""
+  fi
+
+  echo "proxy_caches_to_purge: $proxy_caches_to_purge"
+  echo "fastcgi_caches_to_purge: $fastcgi_caches_to_purge"
+
+  sudo PROXY_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-proxy-cache-on-disk-root-path "$APP")" \
+    PROXY_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-proxy-cache-in-mem-root-path "$APP")" \
+    FASTCGI_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-fastcgi-cache-on-disk-root-path "$APP")" \
+    FASTCGI_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-fastcgi-cache-in-mem-root-path "$APP")" \
+    $_DIR/cache-purger \
+    -config "$nginx_config" \
+    -proxy-caches "$proxy_caches_to_purge" \
+    -fastcgi-caches "$fastcgi_caches_to_purge" \
+    -app-name "$APP"
+}
+
+nginx_get_yaml_config_absolute_path() {
+  desc="get the absolute path of the nginx config file"
+  declare APP="$1"
+
+  config_file_path=$(fn-nginx-custom-config-file "$APP")
+  echo "$(fn-get-data-dir $APP)/app-$APP/nginx-custom-config-yaml/$config_file_path"
+}
+
+# Get all containers for the app
+app_containers_get() {
+    declare APP_NAME="$1" 
+    shift
+    local OPTS=$@
+
+    containers=$(docker ps \
+      -q \
+      --no-trunc \
+      --filter "label=org.label-schema.vendor=dokku" \
+      --filter "label=com.dokku.app-name=$APP_NAME" \
+      $OPTS
+    )
+    
+    if [[ -z "$containers" ]]; then
+        fail_msg="Container not found for $APP_NAME"
+        if [[ -n "$OPTS" ]]; then
+          fail_msg="$fail_msg and options $OPTS"
+        fi
+        dokku_log_fail "$fail_msg"
+    fi
+
+    # filter containers that end with name the same as label value com.dokku.dyno
+    filtered_containers=""
+    for container in $containers; do
+      inspect="$(docker inspect --format='{{ json . }}' "$container")"
+      dyno_name="$(echo "$inspect" | jq -r '.Config.Labels."com.dokku.dyno"')"
+      container_name="$(echo "$inspect" | jq -r '.Name')"
+      if [[ -n "$dyno_name" ]] && [[ "$container_name" == *"$dyno_name" ]]; then
+        filtered_containers+="$container"$'\n'
+      fi
+    done
+
+    echo -n "${filtered_containers%$'\n'}"  # Remove trailing newline
+}
+
+# Get one first container for the app
+app_container_get() {
+    declare APP_NAME="$1" PROCESS_TYPE="$2"
+
+    OPTS=""
+    if [[ -n "$PROCESS_TYPE" ]]; then
+      OPTS="--filter=\"label=com.dokku.process-type=$PROCESS_TYPE\""
+    fi
+
+    containers=$(app_containers_get "$APP_NAME" $OPTS)
+    if [[ -z "$containers" ]]; then
+        dokku_log_fail "Container not found for $APP_NAME"
+    fi
+
+    echo "$containers" | head -n 1
+}
+
+get_container_dns_names() {
+    declare CONTAINER="$1" FILTER="${2:-}"
+    
+      set -x
+    if [[ -n "$FILTER" ]]; then
+        docker inspect --format "{{ json .NetworkSettings.Networks }}" "$CONTAINER" | \
+            jq -r --arg filter "$FILTER" '.[] | select(.DNSNames[]? | contains($filter)) | .DNSNames[0]'
+    else
+        docker inspect --format "{{ json .NetworkSettings.Networks }}" "$CONTAINER" | \
+            jq -r '.[] | .DNSNames[0]'
+    fi
+    set +x
+}
+
+container_get_merged_dir_path() {
+    declare CONTAINER="$1"
+
+    merged_dir_path="$(docker inspect --format='{{.GraphDriver.Data.MergedDir}}' "$CONTAINER")"
+    echo "$merged_dir_path"
+}
+
+container_get_working_dir_path() {
+    declare CONTAINER="$1"
+
+    merged_dir_path=$(container_get_merged_dir_path "$CONTAINER")
+    image="$(docker inspect --format='{{.Image}}' "$CONTAINER")"
+    working_dir_path="$merged_dir_path/$(docker image inspect --format "{{.Config.WorkingDir}}" $image)"
+    echo "$working_dir_path"
+}
+
+container_get_labels() {
+    declare CONTAINER="$1"
+
+    docker inspect --format='{{json .Config.Labels}}' "$CONTAINER"
+}
+
+container_get_mounts() {
+    declare CONTAINER="$1"
+    
+    docker inspect --format='{{json .Mounts}}' "$CONTAINER"   
+}

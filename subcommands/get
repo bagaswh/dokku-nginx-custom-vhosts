@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_DIR/../config"
+source "$_DIR/../internal-functions"
+set -eo pipefail
+[[ $DOKKU_TRACE ]] && set -x
+
+cmd-nginx-custom-get() {
+  declare desc="get nginx property for an app"
+  declare cmd="${PROXY_NAME}:get"
+  [[ "$1" == "$cmd" ]] && shift 1
+  declare APP="$1" KEY="$2"
+
+  [[ -z "$KEY" ]] && dokku_log_fail "No key specified"
+
+  verify_app_name "$APP"
+
+  fn-get-property --app "$APP" "$KEY"
+}
+
+cmd-nginx-custom-get "$@"

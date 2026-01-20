@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -eo pipefail
+[[ $DOKKU_TRACE ]] && set -x
+_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_DIR/config"
+source "$_DIR/internal-functions"
+source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
+source "$PLUGIN_CORE_AVAILABLE_PATH/common/property-functions"
+source "$PLUGIN_AVAILABLE_PATH/config/functions"
+
+trigger-nginx-custom-install() {
+  declare desc="${PROXY_NAME} install trigger"
+  declare trigger="install"
+
+  fn-plugin-property-setup "$PROXY_NAME"
+
+  NGINX_BIN="$(fn-nginx-custom-nginx-location)"
+  NGINX_ROOT="/etc/nginx"
+  NGINX_LOG_ROOT="$(fn-nginx-custom-log-root)"
+  NGINX_INIT_NAME="nginx"
+  NGINX_SUDOERS_FILE="/etc/sudoers.d/dokku-nginx-custom"
+  if fn-nginx-custom-uses-openresty; then
+    NGINX_ROOT="/usr/local/openresty/nginx/conf"
+    NGINX_INIT_NAME="openresty"
+    NGINX_SUDOERS_FILE="/etc/sudoers.d/dokku-openresty"
+  fi
+
+  local systemctl_path=/bin/systemctl
+  if [[ -x /usr/bin/systemctl ]]; then
+    systemctl_path=/usr/bin/systemctl
+  fi
+
+  DOKKU_SUDOERS_FILE="/etc/sudoers.d/dokku"
+
+  local mode="0440"
+  case "$DOKKU_DISTRO" in
+    debian | raspbian)
+      if [[ -x "$systemctl_path" ]]; then
+        echo "%dokku ALL=(ALL) NOPASSWD:$systemctl_path enable $NGINX_INIT_NAME, $systemctl_path disable $NGINX_INIT_NAME, $systemctl_path reload $NGINX_INIT_NAME, $systemctl_path start $NGINX_INIT_NAME, $systemctl_path stop $NGINX_INIT_NAME, $systemctl_path is-active --quiet $NGINX_INIT_NAME, $NGINX_BIN -t, $NGINX_BIN -t -c *" >"$NGINX_SUDOERS_FILE"
+      else
+        echo "%dokku ALL=(ALL) NOPASSWD:/usr/sbin/invoke-rc.d $NGINX_INIT_NAME enable, /usr/sbin/invoke-rc.d $NGINX_INIT_NAME disable, /usr/sbin/invoke-rc.d $NGINX_INIT_NAME reload, /usr/sbin/invoke-rc.d $NGINX_INIT_NAME start, /usr/sbin/invoke-rc.d $NGINX_INIT_NAME stop, $NGINX_BIN -t, ${NGINX_BIN} -t -c *" >"$NGINX_SUDOERS_FILE"
+      fi
+      ;;
+
+    ubuntu)
+      if [[ "$DOKKU_INIT_SYSTEM" == "sv" ]]; then
+        echo "%dokku ALL=(ALL) NOPASSWD:/usr/bin/sv enable $NGINX_INIT_NAME, /usr/bin/sv disable $NGINX_INIT_NAME, /usr/bin/sv reload $NGINX_INIT_NAME, /usr/bin/sv start $NGINX_INIT_NAME, /usr/bin/sv stop $NGINX_INIT_NAME, /usr/bin/sv status $NGINX_INIT_NAME, $NGINX_BIN -t, $NGINX_BIN -t -c *" >"$NGINX_SUDOERS_FILE"
+      elif [[ -x "$systemctl_path" ]]; then
+        echo "%dokku ALL=(ALL) NOPASSWD:$systemctl_path enable $NGINX_INIT_NAME, $systemctl_path disable $NGINX_INIT_NAME, $systemctl_path reload $NGINX_INIT_NAME, $systemctl_path start $NGINX_INIT_NAME, $systemctl_path stop $NGINX_INIT_NAME, $systemctl_path is-active --quiet $NGINX_INIT_NAME, $NGINX_BIN -t, $NGINX_BIN -t -c *" >"$NGINX_SUDOERS_FILE"
+      elif [[ -x /usr/bin/sv ]]; then
+        echo "%dokku ALL=(ALL) NOPASSWD:/usr/bin/sv enable $NGINX_INIT_NAME, /usr/bin/sv disable $NGINX_INIT_NAME, /usr/bin/sv reload $NGINX_INIT_NAME, /usr/bin/sv start $NGINX_INIT_NAME, /usr/bin/sv stop $NGINX_INIT_NAME, /usr/bin/sv status $NGINX_INIT_NAME, $NGINX_BIN -t, $NGINX_BIN -t -c *" >"$NGINX_SUDOERS_FILE"
+      else
+        echo "%dokku ALL=(ALL) NOPASSWD:/etc/init.d/$NGINX_INIT_NAME enable, /etc/init.d/$NGINX_INIT_NAME disable, /etc/init.d/$NGINX_INIT_NAME reload, /etc/init.d/$NGINX_INIT_NAME start, /etc/init.d/$NGINX_INIT_NAME stop, $NGINX_BIN -t, $NGINX_BIN -t -c *" >"$NGINX_SUDOERS_FILE"
+      fi
+
+      echo "%dokku ALL=(ALL) NOPASSWD:SETENV: $_DIR/cache-purger" >"$DOKKU_SUDOERS_FILE"
+      ;;
+
+    arch)
+      echo "%dokku ALL=(ALL) NOPASSWD:$systemctl_path enable $NGINX_INIT_NAME, $systemctl_path disable $NGINX_INIT_NAME, $systemctl_path reload $NGINX_INIT_NAME, $systemctl_path start $NGINX_INIT_NAME, $systemctl_path stop $NGINX_INIT_NAME, $systemctl_path is-active --quiet $NGINX_INIT_NAME, $NGINX_BIN -t, $NGINX_BIN -t -c *" >"$NGINX_SUDOERS_FILE"
+      ;;
+  esac
+
+  chmod "$mode" "$NGINX_SUDOERS_FILE"
+
+  mkdir -p "$NGINX_ROOT/conf.d"
+  chown root:root "$NGINX_ROOT/conf.d"
+
+  # revert dokku group changes
+  mkdir -p "$NGINX_LOG_ROOT"
+  gpasswd -a dokku adm
+  chgrp --quiet -R adm "$NGINX_LOG_ROOT"
+  gpasswd -M "$(grep -E ^dokku: /etc/group | awk -F ":" '{ print $4 }')" dokku
+
+  cd "$_DIR"
+
+  dokku_log_info2 "Setting up custom error pages directory..."
+  mkdir -p "/var/lib/dokku/data/${PROXY_NAME}/dokku-errors"
+
+  cp -f "${_DIR}/templates/"*.html "/var/lib/dokku/data/${PROXY_NAME}/dokku-errors/"
+
+  make -j "$(nproc)" build-in-docker
+
+  chown -R dokku:dokku /var/lib/dokku/data/${PROXY_NAME}/ 
+}
+
+trigger-nginx-custom-install "$@"

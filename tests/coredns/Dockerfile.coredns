@@ -1,0 +1,14 @@
+FROM debian:trixie-slim AS builder
+
+RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
+
+ARG COREDNS_VERSION=1.14.1
+RUN wget https://github.com/coredns/coredns/releases/download/v${COREDNS_VERSION}/coredns_${COREDNS_VERSION}_linux_amd64.tgz
+RUN tar -xvf coredns_${COREDNS_VERSION}_linux_amd64.tgz
+RUN mv coredns /usr/local/bin/coredns
+
+FROM debian:trixie-slim
+
+COPY --from=builder /usr/local/bin/coredns /usr/local/bin/coredns
+
+CMD ["/usr/local/bin/coredns"]

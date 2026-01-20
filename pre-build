@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
+source "$_DIR/config"
+source "$_DIR/functions"
+source "$_DIR/internal-functions"
+set -eo pipefail
+[[ $DOKKU_TRACE ]] && set -x
+
+trigger-nginx-custom-pre-build() {
+  declare desc="${PROXY_NAME} pre-build plugin trigger. Performs checks and stuffs."
+  declare trigger="nginx_custom_pre_build"
+  declare APP="$2"
+  local HAS_NETWORK_CONFIG
+
+  echo "trigger-nginx-custom-pre-build" $@
+  echo "App: $APP"
+
+  echo "[pre-build] Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
+  if [[ "$(get_app_proxy_type "$APP")" != "$PROXY_NAME" ]]; then
+    echo "[trigger-nginx-custom-pre-build] Quitting for app $APP"
+    return
+  fi
+
+  proxy_cache_on_disk_root_path=$(fn-nginx-custom-proxy-cache-on-disk-root-path "$APP")
+  if [[ -z "$proxy_cache_on_disk_root_path" ]]; then
+    dokku_log_fail "proxy-cache-on-disk-root-path is not set. Please set it to a valid path."
+  fi
+
+  proxy_cache_in_mem_root_path=$(fn-nginx-custom-proxy-cache-in-mem-root-path "$APP")
+  if [[ -z "$proxy_cache_in_mem_root_path" ]]; then
+    dokku_log_fail "proxy-cache-in-mem-root-path is not set. Please set it to a valid path."
+  fi
+
+  fastcgi_cache_on_disk_root_path=$(fn-nginx-custom-fastcgi-cache-on-disk-root-path "$APP")
+  if [[ -z "$fastcgi_cache_on_disk_root_path" ]]; then
+    dokku_log_fail "fastcgi-cache-on-disk-root-path is not set. Please set it to a valid path."
+  fi
+
+  fastcgi_cache_in_mem_root_path=$(fn-nginx-custom-fastcgi-cache-in-mem-root-path "$APP")
+  if [[ -z "$fastcgi_cache_in_mem_root_path" ]]; then
+    dokku_log_fail "fastcgi-cache-in-mem-root-path is not set. Please set it to a valid path."
+  fi
+
+  proxy_cache_key_zone_size=$(fn-nginx-custom-proxy-cache-default-key-zone-size "$APP")
+  if [[ -z "$proxy_cache_key_zone_size" ]]; then
+    dokku_log_fail "proxy-cache-default-key-zone-size is not set. Please set it to a valid value."
+  fi
+
+  fastcgi_cache_key_zone_size=$(fn-nginx-custom-fastcgi-cache-default-key-zone-size "$APP")
+  if [[ -z "$fastcgi_cache_key_zone_size" ]]; then
+    dokku_log_fail "fastcgi-cache-default-key-zone-size is not set. Please set it to a valid value."
+  fi
+
+
+  nginx_access_log_root_dir=$(fn-nginx-custom-nginx-access-log-root-dir "$APP")
+  if [[ -z "$nginx_access_log_root_dir" ]]; then
+    dokku_log_fail "nginx-access-log-root-dir is not set. Please set it to a valid path."
+  fi
+
+  nginx_error_log_root_dir=$(fn-nginx-custom-nginx-error-log-root-dir "$APP")
+  if [[ -z "$nginx_error_log_root_dir" ]]; then
+    dokku_log_fail "nginx-error-log-root-dir is not set. Please set it to a valid path."
+  fi
+
+  nginx-config-get-upstream-address-mode "$APP"
+}
+
+
+trigger-nginx-custom-pre-build "$@"

@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+set -eo pipefail
+[[ $DOKKU_TRACE ]] && set -x
+_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_DIR/config"
+source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
+source "$PLUGIN_CORE_AVAILABLE_PATH/common/property-functions"
+
+####
+# Utils
+####
+is_in_array() {
+  declare desc="checks if a value exists in an array"
+  local value="$1"
+  shift
+  local array=("$@")
+  
+  for element in "${array[@]}"; do
+    if [[ "$element" == "$value" ]]; then
+      return 0
+    fi
+  done
+  
+  return 1
+}
+
+fn-nginx-custom-log-root() {
+  declare desc="get the nginx log root"
+  local NGINX_LOG_ROOT="/var/log/nginx"
+
+  fn-nginx-custom-uses-openresty && NGINX_LOG_ROOT="/var/log/openresty"
+  echo "$NGINX_LOG_ROOT"
+}
+
+fn-nginx-custom-uses-openresty() {
+  declare desc="returns whether openresty is in use or not"
+
+  if [[ -x /usr/bin/openresty ]]; then
+    return
+  fi
+
+  return 1
+}
+
+fn-nginx-custom-nginx-location() {
+  declare desc="check that nginx is at the expected location and return it"
+  local NGINX_LOCATION
+
+  NGINX_LOCATION=$(command -v nginx 2>/dev/null)
+  if [[ -z "$NGINX_LOCATION" ]]; then
+    NGINX_LOCATION="/usr/sbin/nginx"
+  fi
+
+  if fn-nginx-custom-uses-openresty; then
+    NGINX_LOCATION="/usr/bin/openresty"
+  fi
+
+  if [[ ! -x "$NGINX_LOCATION" ]]; then
+    dokku_log_fail "Could not find nginx binary in \$PATH or at '${NGINX_LOCATION}'."
+  fi
+
+  echo "$NGINX_LOCATION"
+}
+
+fn-get-property() {
+  declare desc="get a property from the nginx plugin"
+
+  "$_DIR/nginx-property" --log-root "$(fn-nginx-custom-log-root)"  "$@"
+}
+
+fn-nginx-custom-add-header-mode() {
+  declare desc="retrieves add header mode from add-header-mode property"
+  declare APP="$1"
+  hdr_mode=$(fn-get-property --app "$APP" --global "add-header-mode")
+  if [[ -z "$hdr_mode" ]]; then
+    echo "add_header"
+  else
+    echo "$hdr_mode"
+  fi
+}
+
+fn-nginx-custom-config-file() {
+  declare desc="retrieves config file path from config-file property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --computed "config-file"
+}
+
+fn-nginx-custom-config-files-root-dir() {
+  declare desc="retrieves config files root dir from config-files-root-dir property"
+  declare APP="$1"
+  dir=$(fn-get-property --app "$APP" --computed "config-files-root-dir")
+  if [[ -z "$dir" ]]; then
+    echo "$DOKKU_ROOT/$APP"
+  fi
+}
+
+fn-nginx-custom-proxy-cache-on-disk-root-path() {
+  declare desc="retrieves proxy cache on disk root path from proxy-cache-on-disk-root-path property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --global "proxy-cache-on-disk-root-path"
+}
+
+fn-nginx-custom-proxy-cache-in-mem-root-path() {
+  declare desc="retrieves proxy cache in memory root path from proxy-cache-in-mem-root-path property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --global "proxy-cache-in-mem-root-path"
+}
+
+fn-nginx-custom-fastcgi-cache-on-disk-root-path() {
+  declare desc="retrieves fastcgi cache on disk root path from fastcgi-cache-on-disk-root-path property"
+  declare APP="$1"
+ fn-get-property --app "$APP" --global "fastcgi-cache-on-disk-root-path"
+}
+
+fn-nginx-custom-fastcgi-cache-in-mem-root-path() {
+  declare desc="retrieves fastcgi cache in memory root path from fastcgi-cache-in-mem-root-path property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --global "fastcgi-cache-in-mem-root-path"
+}
+
+fn-nginx-custom-proxy-cache-default-flags() {
+  declare desc="retrieves proxy cache default flags from proxy-cache-default-flags property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --global "proxy-cache-default-flags"
+}
+
+fn-nginx-custom-fastcgi-cache-default-flags() {
+  declare desc="retrieves fastcgi cache default flags from fastcgi-cache-default-flags property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --global "fastcgi-cache-default-flags"
+}
+
+fn-nginx-custom-proxy-cache-default-key-zone-size() {
+  declare desc="retrieves proxy cache key zone size from proxy-cache-default-key-zone-size property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --global "proxy-cache-default-key-zone-size"
+}
+
+fn-nginx-custom-fastcgi-cache-default-key-zone-size() {
+  declare desc="retrieves fastcgi cache key zone size from fastcgi-cache-default-key-zone-size property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --global "fastcgi-cache-default-key-zone-size"
+}
+
+fn-nginx-custom-nginx-access-log-root-dir() {
+  declare desc="retrieves nginx access log root dir from nginx-access-log-root-dir property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --global "nginx-access-log-root-dir"
+}
+
+fn-nginx-custom-nginx-error-log-root-dir() {
+  declare desc="retrieves nginx error log root dir from nginx-error-log-root-dir property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --global "nginx-error-log-root-dir"
+}
+
+fn-nginx-custom-nginx-default-access-log-format() {
+  declare desc="retrieves nginx default access log format from nginx-default-access-log-format property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --global "nginx-default-access-log-format"
+}
+
+nginx-config-get-upstream-address-mode() {
+  declare desc="retrieves nginx upstream address mode from yaml config"
+  declare APP="$1"
+  mode="$(nginx_yaml_get_config "$APP" "upstream_address_mode")"
+  if [[ -z "$mode" ]] || [[ "$mode" == "null" ]]; then
+    echo "ip"
+  else
+    valid_modes=("ip" "dns")
+    if ! is_in_array "$mode" "${valid_modes[@]}"; then
+      dokku_log_fail "Invalid nginx-upstream-address-mode value '$mode'. Valid values are: ${valid_modes[*]}"
+    fi
+    echo "$mode"
+  fi
+}
+
+fn-get-data-dir() {
+  declare desc="get the data directory"
+  declare APP="$1"
+
+  DEFAULT_DATA_DIR="${DOKKU_LIB_ROOT}/data"
+  user_defined_data_dir=$(fn-get-property --app "$APP" "data-dir")
+  DATA_DIR=""
+  if [[ -n "$user_defined_data_dir" ]]; then
+    DATA_DIR="$user_defined_data_dir"
+  else
+    DATA_DIR="$DEFAULT_DATA_DIR"
+  fi
+  echo "${DATA_DIR}/${PROXY_NAME}"
+}
+

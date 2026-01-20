@@ -1,0 +1,17 @@
+services:
+  coredns:
+    build:
+      context: .
+      dockerfile: Dockerfile.coredns
+    image: dokku-nginx-path-coredns
+    restart: always
+    ports:
+      - 127.0.0.33:53:53/udp
+      - 127.0.0.33:53:53/tcp
+    networks:
+      - bridge
+
+networks:
+  bridge:
+    external:
+      name: bridge

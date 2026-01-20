@@ -1,0 +1,1 @@
+{"virtualbox":{"/dokku-nginx-path":{"guestpath":"/dokku-nginx-path","hostpath":"/home/bagaswh/data/devops/tools/dokku-nginx-path","disabled":false,"__vagrantfile":true},"/vagrant":{"guestpath":"/vagrant","hostpath":"/home/bagaswh/data/devops/tools/dokku-nginx-path/tests","disabled":false,"__vagrantfile":true}}}

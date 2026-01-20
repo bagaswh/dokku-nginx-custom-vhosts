@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
+source "$_DIR/config"
+source "$_DIR/functions"
+source "$_DIR/internal-functions"
+set -eo pipefail
+[[ $DOKKU_TRACE ]] && set -x
+
+fn-nginx-custom-copy-from-image() {
+  declare APP="$1" IMAGE_NAME="$2" CONFIG_FILE_PATH="$3"
+
+  conf_dest_path_base_dir="$(dirname $(nginx_get_yaml_config_absolute_path "$APP"))" 
+  
+  mkdir -p "$conf_dest_path_base_dir"
+
+  conf_dest_path_filename_prefix="$(basename ${CONFIG_FILE_PATH})"
+  conf_dest_path="$conf_dest_path_base_dir/$conf_dest_path_filename_prefix"
+  conf_dest_path_with_pid="$conf_dest_path.$DOKKU_PID"
+  conf_dest_missing_path="$conf_dest_path_with_pid.missing"
+
+  find "$conf_dest_path_base_dir" -maxdepth 1 -type f -name "$conf_dest_path_filename_prefix.*" -delete
+  copy_from_image "$IMAGE_NAME" "$CONFIG_FILE_PATH" "$conf_dest_path" 2>/dev/null || true
+  echo "copy_from_image $IMAGE_NAME:$CONFIG_FILE_PATH $conf_dest_path"
+
+  if [[ ! -f "$conf_dest_path" ]]; then
+    dokku_log_fail "nginx-custom-config-yaml file not found in image $IMAGE_NAME:$CONFIG_FILE_PATH"
+  fi
+}
+
+trigger-nginx-custom-post-extract() {
+  declare desc="${PROXY_NAME} post-extract plugin trigger"
+  declare trigger="post-extract"
+  declare APP="$1" SOURCECODE_WORK_DIR="$2"
+  local app_source_image
+
+  echo "Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
+
+  if [[ "$(get_app_proxy_type "$APP")" != "$PROXY_NAME" ]]; then
+    echo "[trigger-nginx-custom-post-extract] Quitting"
+    return
+  fi
+
+  app_source_image="$(plugn trigger git-get-property "$APP" "source-image")"
+
+  config_file_path=$(fn-nginx-custom-config-file "$APP")
+  fn-nginx-custom-copy-from-image "$APP" "$app_source_image" "$config_file_path"
+}
+
+trigger-nginx-custom-post-extract "$@"

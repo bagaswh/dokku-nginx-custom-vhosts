@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_DIR/../config"
+source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
+source "$PLUGIN_CORE_AVAILABLE_PATH/common/property-functions"
+set -eo pipefail
+[[ $DOKKU_TRACE ]] && set -x
+
+cmd-nginx-custom-set() {
+  declare desc="set or clear an nginx-custom property for an app"
+  declare cmd="${PROXY_NAME}:set"
+  [[ "$1" == "$cmd" ]] && shift 1
+  declare APP="$1" KEY="$2" VALUE="$3"
+
+  if [[ "$APP" != "--global" ]]; then
+    verify_app_name "$APP"
+  fi
+
+  if [[ -n "$VALUE" ]]; then
+    dokku_log_info2_quiet "Setting ${KEY} to ${VALUE}"
+    fn-plugin-property-write "$PROXY_NAME" "$APP" "$KEY" "$VALUE"
+  else
+    dokku_log_info2_quiet "Unsetting ${KEY}"
+    fn-plugin-property-delete "$PROXY_NAME" "$APP" "$KEY"
+  fi
+}
+
+cmd-nginx-custom-set "$@"

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -eo pipefail
+[[ $DOKKU_TRACE ]] && set -x
+source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
+_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
+source "$_DIR/config"
+source "$_DIR/functions"
+
+trigger-nginx-custom-post-deploy() {
+  declare desc="${PROXY_NAME} post-deploy plugin trigger"
+  declare trigger="nginx_custom_post_deploy"
+  declare APP="$1"
+  local HAS_NETWORK_CONFIG
+
+  echo "Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
+
+  if [[ "$(get_app_proxy_type "$APP")" != "$PROXY_NAME" ]]; then
+    echo "[trigger-nginx-custom-post-deploy] Quitting"
+    return
+  fi
+
+  plugn trigger proxy-build-config "$APP"
+  nginx_purge_cache "$APP"
+}
+
+trigger-nginx-custom-post-deploy "$@"

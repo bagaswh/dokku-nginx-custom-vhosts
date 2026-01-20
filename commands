@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_DIR/config"
+[[ " help nginx-custom:help " == *" $1 "* ]] || [[ "$1" == "${PROXY_NAME}:"* ]] || exit "$DOKKU_NOT_IMPLEMENTED_EXIT"
+source "$_DIR/help-functions"
+source "$_DIR/command-functions"
+set -eo pipefail
+[[ $DOKKU_TRACE ]] && set -x
+
+case "$1" in
+  help | nginx-custom:help)
+    cmd-nginx-custom-vhosts-help "$@"
+    ;;
+
+  nginx-custom:access-logs)
+    source "$_DIR/subcommands/access-logs"
+    ;;
+
+  nginx-custom:error-logs)
+    source "$_DIR/subcommands/error-logs"
+    ;;
+
+  nginx-custom:report)
+    cmd-nginx-custom-report "$@"
+    ;;
+
+  nginx-custom:show-config)
+    cmd-nginx-custom-show-config "$@"
+    ;;
+
+  nginx-custom:validate-config)
+    cmd-nginx-custom-validate-config "$@"
+    ;;
+
+  nginx-custom:set)
+    source "$_DIR/subcommands/set"
+    ;;
+
+  nginx-custom:get)
+    source "$_DIR/subcommands/get"
+    ;;
+
+  *)
+    exit "$DOKKU_NOT_IMPLEMENTED_EXIT"
+    ;;
+
+esac

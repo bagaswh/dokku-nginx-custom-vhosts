@@ -1,0 +1,236 @@
+user_vars:
+  root_dir: "{{ .sys_vars.container_working_dir }}/public"
+
+  proxy_cache_default: default-in-fs
+  fail_timeout: 50s
+
+  some_common_headers:
+    X-User-Tier: premium
+    X-Region: EU
+
+  nginx_fe_paths:
+    - "= /"
+    - "/blog"
+    - "/get-blog"
+    - "/docs"
+    - "/pricing"
+    - "/contact-us"
+    - "/en"
+    - "/id"
+
+upstream_address_mode: dns
+
+upstreams:
+  # - select_process_type: "web"
+  #   select_port: "5000"
+  #   upstream_block_directives:
+  #     - "keepalive 10"
+  #   default_servers_flags:
+  #     - flags:
+  #         weight: "3"
+  #         max_fails: "3"
+  #         fail_timeout: "{{ .vars.fail_timeout }}"
+  #     - selector: "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}:5000$"
+  #       flags:
+  #         weight: "1"
+  #     - selector: ".*"
+  #       flags:
+  #         weight: "1"
+
+  - name: websocket_proxy
+    servers:
+      - addr: "127.0.0.1:8001"
+        flags:
+          weight: "3"
+          max_fails: "3"
+          fail_timeout: 30s
+      - addr: "127.0.0.1:8002"
+        flags:
+          weight: "2"
+          max_fails: "3"
+          fail_timeout: 30s
+      - addr: "127.0.0.1:8003"
+        flags:
+          backup:
+
+  - name: grpc_backend
+    servers:
+      - addr: "127.0.0.1:9001"
+        flags:
+          weight: "1"
+      - addr: "127.0.0.1:9002"
+        flags:
+          weight: "1"
+
+  - name: static_backend
+    servers:
+      - addr: "127.0.0.1:3000"
+        flags:
+          weight: "1"
+      - addr: "127.0.0.1:3001"
+        flags:
+          backup:
+
+  - name: php_fpm
+    servers:
+      - addr: "unix:/var/run/php/php8.1-fpm.sock"
+        flags: {}
+
+maps:
+  # - variable: region
+  #   string: $geoip_city_continent_code
+  #   lines: |
+  #     default unknown;
+  #     NA north-america;
+  #     EU europe;
+  #     AS asia;
+  #     OC oceania;
+  #     AF africa;
+  #     SA south-america;
+
+  - variable: user_tier
+    string: $http_x_api_key
+    lines: |
+      hostnames;
+      default bronze;
+      "~^premium-.*$" gold;
+      "~^enterprise-.*$" platinum;
+
+  - variable: cache_key
+    string: $request_uri
+    lines: |
+      default $request_uri;
+      "~^/api/v1/cached/.*$" "${request_uri}__${http_x_api_key}";
+
+    variables:
+      - name: proxy_timeout
+        value: "60s"
+      - name: max_body_size
+        value: "10m"
+      - name: ssl_protocols
+        value: "TLSv1.2 TLSv1.3"
+
+proxy_caches:
+  - name: in_mem
+    in_mem: true
+  - name: on_disk
+    on_disk: true
+    purge_on_deploy: true
+
+in_server_block: |
+  ssl_certificate /etc/letsencrypt/live/api.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/api.example.com/privkey.pem;
+  ssl_protocols {{ .variables.ssl_protocols }};
+  client_max_body_size {{ .variables.max_body_size }};
+  add_header Cache-Control "public, max-age={{ .variables.cache_max_age }}";
+  add_header X-Cache-Status $upstream_cache_status;
+
+in_http_block: |
+  limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+  limit_conn_zone $binary_remote_addr zone=addr:10m;
+
+vhosts:
+  - existing: false
+    server_name: api.example.com
+    locations:
+      - body: |
+          {{ range .vars.nginx_fe_paths }}
+          location {{ . }} {
+            try_files /dev/null {{ $.upstreams.default }};
+          }
+          {{ end }}
+
+      - modifier: ""
+        uri: "/api/v1/"
+        body: |
+          alias "{{ (index $.sys_vars.container_mounts "/var/www/biadap").Source }}";
+          proxy_cache {{ .proxy_caches.in_mem }};
+          proxy_pass http://{{ index $.upstreams "default-5001" }};
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_set_header Host $http_host;
+          # proxy_set_header X-Region {{ .map_variables.region }};
+          proxy_set_header X-User-Tier {{ .map_variables.user_tier }};
+
+          {{ nginx_add_header "X-App-Name" (index $.sys_vars.container_labels "com.dokku.app-name") -}}
+
+          {{- range $key, $value := $.vars.some_common_headers }}
+          {{ nginx_add_header $key $value -}}
+          {{ end -}}
+
+      - modifier: "^~"
+        uri: "/ws/"
+        body: |
+          proxy_pass http://{{ .upstreams.websocket_proxy }};
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection "upgrade";
+          proxy_set_header X-Real-IP $remote_addr;
+
+      - modifier: "="
+        uri: "/grpc/"
+        body: |
+          grpc_pass grpc://{{ .upstreams.grpc_backend }};
+          grpc_set_header X-Real-IP $remote_addr;
+
+  - existing: true
+    server_name: legacy-api.example.com
+
+    locations:
+      - modifier: ""
+        uri: "/"
+        body: |
+          proxy_pass http://{{ .upstreams.default }};
+          proxy_set_header Host $http_host;
+
+  - existing: false
+    server_name: www.example.com
+
+    locations:
+      - modifier: ""
+        uri: "/"
+        body: |
+          proxy_cache {{ .proxy_caches.on_disk }};
+          proxy_cache_use_stale error timeout http_500 http_502 http_503 http_504;
+          proxy_cache_valid 200 60m;
+          proxy_cache_valid 404 1m;
+          proxy_pass http://{{ .upstreams.static_backend }};
+
+      - modifier: "^~"
+        uri: "/assets/"
+        body: |
+          alias "{{ .vars.root_dir }}";
+          proxy_cache {{ .proxy_caches.on_disk }};
+          proxy_cache_use_stale error timeout http_500 http_502 http_503 http_504;
+          proxy_cache_valid 200 24h;
+          proxy_cache_valid 404 1m;
+          proxy_pass http://{{ .upstreams.static_backend }};
+
+    variables:
+      - name: cache_max_age
+        value: "31536000"
+
+  - existing: false
+    server_name: php.example.com
+
+    locations:
+      - modifier: "~"
+        uri: "\\.php$"
+        body: |
+          fastcgi_cache {{ .fastcgi_caches.in_mem }};
+          fastcgi_cache_valid 200 60m;
+          fastcgi_cache_use_stale error timeout http_500;
+          fastcgi_pass {{ .upstreams.php_fpm }};
+          include fastcgi_params;
+
+      - modifier: ""
+        uri: "/"
+        body: |
+          try_files $uri $uri/ /index.php?$args;
+
+      - modifier: "~*"
+        uri: "\\.(js|css|png|jpg|jpeg|gif|ico)$"
+        body: |
+          expires max;
+          log_not_found off;
