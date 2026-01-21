@@ -78,7 +78,7 @@ get_app_listeners_json() {
     if [[ "$UPSTREAM_ADDRESS_MODE" == "ip" ]]; then
       listeners="$(plugn trigger network-get-listeners "$APP" "$process_type" | xargs)"
     else
-      containers="$(app_containers_get "$APP" --filter="label=com.dokku.process-type=$process_type")"
+      containers="$(app_containers_get "$APP" "$process_type")"
       for container in $containers; do
         listeners+="$(get_container_dns_names "$container" "$process_type") "
       done
@@ -228,51 +228,67 @@ nginx_get_yaml_config_absolute_path() {
 }
 
 # Get all containers for the app
-app_containers_get() {
-    declare APP_NAME="$1" 
-    shift
-    local OPTS=$@
+# app_containers_get() {
+#     declare APP_NAME="$1" 
+#     shift
+#     local OPTS=$@
 
-    containers=$(docker ps \
-      -q \
-      --no-trunc \
-      --filter "label=org.label-schema.vendor=dokku" \
-      --filter "label=com.dokku.app-name=$APP_NAME" \
-      $OPTS
-    )
+#     containers=$(docker ps \
+#       -q \
+#       --no-trunc \
+#       --filter "label=org.label-schema.vendor=dokku" \
+#       --filter "label=com.dokku.app-name=$APP_NAME" $OPTS
+#     )
     
-    if [[ -z "$containers" ]]; then
-        fail_msg="Container not found for $APP_NAME"
-        if [[ -n "$OPTS" ]]; then
-          fail_msg="$fail_msg and options $OPTS"
-        fi
-        dokku_log_fail "$fail_msg"
-    fi
+#     if [[ -z "$containers" ]]; then
+#         fail_msg="Container not found for $APP_NAME"
+#         if [[ -n "$OPTS" ]]; then
+#           fail_msg="$fail_msg and options $OPTS"
+#         fi
+#         dokku_log_fail "$fail_msg"
+#     fi
 
-    # filter containers that end with name the same as label value com.dokku.dyno
-    filtered_containers=""
-    for container in $containers; do
-      inspect="$(docker inspect --format='{{ json . }}' "$container")"
-      dyno_name="$(echo "$inspect" | jq -r '.Config.Labels."com.dokku.dyno"')"
-      container_name="$(echo "$inspect" | jq -r '.Name')"
-      if [[ -n "$dyno_name" ]] && [[ "$container_name" == *"$dyno_name" ]]; then
-        filtered_containers+="$container"$'\n'
-      fi
-    done
+#     # filter containers that end with name the same as label value com.dokku.dyno
+#     filtered_containers=""
+#     for container in $containers; do
+#       inspect="$(docker inspect --format='{{ json . }}' "$container")"
+#       dyno_name="$(echo "$inspect" | jq -r '.Config.Labels."com.dokku.dyno"')"
+#       container_name="$(echo "$inspect" | jq -r '.Name')"
+#       if [[ -n "$dyno_name" ]] && [[ "$container_name" == *"$dyno_name" ]]; then
+#         filtered_containers+="$container"$'\n'
+#       fi
+#     done
 
-    echo -n "${filtered_containers%$'\n'}"  # Remove trailing newline
+#     echo -n "${filtered_containers%$'\n'}"  # Remove trailing newline
+# }
+
+app_containers_get() {
+  declare APP_NAME="$1" PROCESS_TYPE="$2"
+
+  dokku_home_dir="$(get_dokku_user_home)"
+
+  if [[ -n "$PROCESS_TYPE" ]]; then
+    pattern="CONTAINER.$PROCESS_TYPE*"
+  else
+    pattern="CONTAINER*"
+  fi
+
+  # Read files into array properly
+  while IFS= read -r -d '' file; do
+    cat "$file"
+  done < <(find "$dokku_home_dir/$APP_NAME" -maxdepth 1 -mindepth 1 -type f -name "$pattern" -print0)
 }
 
 # Get one first container for the app
 app_container_get() {
     declare APP_NAME="$1" PROCESS_TYPE="$2"
 
-    OPTS=""
-    if [[ -n "$PROCESS_TYPE" ]]; then
-      OPTS="--filter=\"label=com.dokku.process-type=$PROCESS_TYPE\""
-    fi
+    # OPTS=""
+    # if [[ -n "$PROCESS_TYPE" ]]; then
+      # OPTS="--filter=\"label=com.dokku.process-type=$PROCESS_TYPE\""
+    # fi
 
-    containers=$(app_containers_get "$APP_NAME" $OPTS)
+    containers=$(app_containers_get "$APP_NAME" "$PROCESS_TYPE")
     if [[ -z "$containers" ]]; then
         dokku_log_fail "Container not found for $APP_NAME"
     fi
@@ -283,7 +299,7 @@ app_container_get() {
 get_container_dns_names() {
     declare CONTAINER="$1" FILTER="${2:-}"
     
-      set -x
+    set -x
     if [[ -n "$FILTER" ]]; then
         docker inspect --format "{{ json .NetworkSettings.Networks }}" "$CONTAINER" | \
             jq -r --arg filter "$FILTER" '.[] | select(.DNSNames[]? | contains($filter)) | .DNSNames[0]'

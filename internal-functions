@@ -24,6 +24,16 @@ is_in_array() {
   return 1
 }
 
+get_dokku_user() {
+  declare desc="get dokku user"
+  echo $DOKKU_SYSTEM_USER
+}
+
+get_dokku_user_home() {
+  declare desc="get dokku user home"
+  getent passwd "$(get_dokku_user)" | cut -d: -f6
+}
+
 fn-nginx-custom-log-root() {
   declare desc="get the nginx log root"
   local NGINX_LOG_ROOT="/var/log/nginx"
