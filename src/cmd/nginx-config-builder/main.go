@@ -584,8 +584,8 @@ func updateCurrentSymlink(nginxConfigDirectory string, newReleaseDir string) err
 	return nil
 }
 
-func testNginxConfig(nginxTestCommand string) error {
-	cmd := exec.Command("sh", "-c", nginxTestCommand)
+func testNginxConfig(nginxTestCommand ...string) error {
+	cmd := exec.Command(nginxTestCommand[0], nginxTestCommand[1:]...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("nginx config test failed: %s", string(output))
@@ -675,6 +675,8 @@ func main() {
 	flag.BoolVar(&withoutNginxTest, "without-nginx-test", false, "do not run nginx test")
 
 	flag.Parse()
+
+	nginxTestCommandSplit := strings.Split(nginxTestCommand, " ")
 
 	required := []string{"app-name", "config-file-path"}
 
@@ -957,7 +959,8 @@ func main() {
 	}
 
 	if !withoutNginxTest {
-		if err := testNginxConfig(nginxTestCommand); err != nil {
+		log.Printf("performing nginx test with commands: %#v\n", nginxTestCommandSplit)
+		if err := testNginxConfig(nginxTestCommandSplit...); err != nil {
 			log.Fatalf("nginx config test failed: %v\n", err)
 		}
 	}

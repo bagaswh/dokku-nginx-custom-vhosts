@@ -53,6 +53,23 @@ restart_nginx() {
 
 }
 
+get_nginx_test_command() {
+  declare desc="get nginx test command"
+
+  nginx_test_command="$(fn-get-property --app "$APP" --global "nginx-test-command")"
+  if [[ -n "$nginx_test_command" ]]; then
+    echo "$nginx_test_command"
+    return
+  fi
+
+  if fn-nginx-custom-uses-openresty; then
+    echo "sudo openresty -t"
+    return
+  fi
+
+  echo "sudo nginx -t"
+}
+
 get_process_types() {
   declare desc="get process types for given app"
   declare APP="$1"
@@ -144,10 +161,7 @@ nginx_build_config() {
 
   echo -e "DOKKU_APP_LISTENERS: $DOKKU_APP_LISTENERS"
 
-  nginx_test_command="sudo nginx -t"
-  if fn-nginx-custom-uses-openresty; then
-    nginx_test_command="sudo openresty -t"
-  fi
+  nginx_test_command="$(get_nginx_test_command)"
 
   # Getting one container is enough since we only use this to get labels and mounts, which mostly are the same
   # for all containers.
