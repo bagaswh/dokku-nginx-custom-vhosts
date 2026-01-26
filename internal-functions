@@ -175,14 +175,16 @@ nginx-config-get-upstream-address-mode() {
   declare APP="$1"
   mode="$(nginx_yaml_get_config "$APP" "upstream_address_mode")"
   if [[ -z "$mode" ]] || [[ "$mode" == "null" ]]; then
-    echo "ip"
-  else
-    valid_modes=("ip" "dns")
-    if ! is_in_array "$mode" "${valid_modes[@]}"; then
-      dokku_log_fail "Invalid nginx-upstream-address-mode value '$mode'. Valid values are: ${valid_modes[*]}"
+    mode="$(fn-get-property --app "$APP" --global "upstream-address-mode")"
+    if [[ -z "$mode" ]] || [[ "$mode" == "null" ]]; then
+      mode="ip"
     fi
-    echo "$mode"
   fi
+  valid_modes=("ip" "dns")
+  if ! is_in_array "$mode" "${valid_modes[@]}"; then
+    dokku_log_fail "Invalid nginx-upstream-address-mode value '$mode'. Valid values are: ${valid_modes[*]}"
+  fi
+  echo "$mode"
 }
 
 fn-get-data-dir() {
