@@ -88,6 +88,10 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 	// default upstreams
 	for _, port := range data.UpstreamPorts {
 		for processType, listeners := range data.AppListeners {
+			if len(listeners) == 0 {
+				continue
+			}
+
 			refName := fmt.Sprintf("%s-%s", processType, port)
 			generatedUpstreamName := fmt.Sprintf("%s-%s", appName, refName)
 			upstreamResultingNames[refName] = generatedUpstreamName
