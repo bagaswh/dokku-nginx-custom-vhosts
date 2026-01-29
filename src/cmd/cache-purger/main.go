@@ -114,7 +114,9 @@ func purgeCacheDir(path string, purgeCommand string) error {
 	if purgeCommand == "" {
 		return os.RemoveAll(path)
 	}
-	cmd := exec.Command(purgeCommand, path)
+	purgeCommands := strings.Split(purgeCommand, " ")
+	purgeCommands = append(purgeCommands, path)
+	cmd := exec.Command(purgeCommands[0], purgeCommands[1:]...)
 	log.Printf("Running purge command: %s\n", cmd.String())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
