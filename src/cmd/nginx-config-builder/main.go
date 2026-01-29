@@ -848,10 +848,18 @@ func main() {
 		fmt.Printf("[VARDEBUG] invalid IP received, app listeners are empty")
 		appListeners = map[string][]string{}
 	}
+	filteredAppListeners := make(map[string][]string)
+	for processType, listeners := range appListeners {
+		if len(listeners) == 0 {
+			continue
+		}
+		filteredAppListeners[processType] = listeners
+	}
+	fmt.Printf("[VARDEBUG] filteredAppListeners=%s\n", prettyJSON(filteredAppListeners))
 
 	tmplData := upstreamConfigTemplateData{
 		App:           appName,
-		AppListeners:  appListeners,
+		AppListeners:  filteredAppListeners,
 		UpstreamPorts: strings.Split(os.Getenv("PROXY_UPSTREAM_PORTS"), " "),
 	}
 
