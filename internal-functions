@@ -170,6 +170,12 @@ fn-nginx-custom-nginx-default-access-log-format() {
   fn-get-property --app "$APP" --global "nginx-default-access-log-format"
 }
 
+fn-nginx-custom-nginx-get-nginx-purge-cache-command() {
+  declare desc="retrieves nginx purge cache command from nginx-purge-cache-command property"
+  declare APP="$1"
+  fn-get-property --app "$APP" --global "nginx-purge-cache-command"
+}
+
 nginx-config-get-upstream-address-mode() {
   declare desc="retrieves nginx upstream address mode from yaml config"
   declare APP="$1"

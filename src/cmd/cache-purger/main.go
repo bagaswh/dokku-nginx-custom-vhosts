@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -106,11 +107,20 @@ func loadCacheRoots(kind string, needed bool) map[string]string {
 	}
 }
 
-func purgeCacheDir(path string) error {
+func purgeCacheDir(path string, purgeCommand string) error {
 	if path == "" || path == "/" {
 		return fmt.Errorf("refusing to remove unsafe path %q", path)
 	}
-	return os.RemoveAll(path)
+	if purgeCommand == "" {
+		return os.RemoveAll(path)
+	}
+	cmd := exec.Command(purgeCommand, path)
+	log.Printf("Running purge command: %s\n", cmd.String())
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to purge cache dir %s: %w: %s", path, err, string(output))
+	}
+	return nil
 }
 
 func main() {
@@ -119,12 +129,14 @@ func main() {
 		proxyCachesFlag string
 		fastcgiFlag     string
 		appName         string
+		purgeCommand    string
 	)
 
 	flag.StringVar(&configPath, "config", "", "path to nginx config file")
 	flag.StringVar(&proxyCachesFlag, "proxy-caches", "", "comma separated proxy cache names to purge")
 	flag.StringVar(&fastcgiFlag, "fastcgi-caches", "", "comma separated fastcgi cache names to purge")
 	flag.StringVar(&appName, "app-name", "", "app name used when rendering the nginx config (optional if cache paths are explicitly set)")
+	flag.StringVar(&purgeCommand, "purge-command", "", "command used to perform cache purging")
 	flag.Parse()
 
 	if configPath == "" {
@@ -165,7 +177,7 @@ func main() {
 			log.Fatalln(err)
 		}
 		log.Printf("Purging proxy cache %q at %s\n", name, cachePath)
-		if err := purgeCacheDir(cachePath); err != nil {
+		if err := purgeCacheDir(cachePath, purgeCommand); err != nil {
 			log.Fatalln(err)
 		}
 	}
@@ -176,7 +188,7 @@ func main() {
 			log.Fatalln(err)
 		}
 		log.Printf("Purging fastcgi cache %q at %s\n", name, cachePath)
-		if err := purgeCacheDir(cachePath); err != nil {
+		if err := purgeCacheDir(cachePath, purgeCommand); err != nil {
 			log.Fatalln(err)
 		}
 	}

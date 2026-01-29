@@ -230,6 +230,7 @@ nginx_purge_cache() {
     -config "$nginx_config" \
     -proxy-caches "$proxy_caches_to_purge" \
     -fastcgi-caches "$fastcgi_caches_to_purge" \
+    -purge-command "$(fn-nginx-custom-nginx-get-nginx-purge-cache-command "$APP")" \
     -app-name "$APP"
 }
 
