@@ -97,7 +97,7 @@ get_app_listeners_json() {
     else
       containers="$(app_containers_get "$APP" "$process_type")"
       for container in $containers; do
-        listeners+="$(get_container_dns_names "$container" "$process_type") "
+        listeners+="$(get_container_dns_names "$container") "
       done
     fi
     
@@ -312,16 +312,11 @@ app_container_get() {
 }
 
 get_container_dns_names() {
-    declare CONTAINER="$1" FILTER="${2:-}"
+    declare CONTAINER="$1"
     
     set -x
-    if [[ -n "$FILTER" ]]; then
-        docker inspect --format "{{ json .NetworkSettings.Networks }}" "$CONTAINER" | \
-            jq -r --arg filter "$FILTER" '.[] | select(.DNSNames[]? | contains($filter)) | .DNSNames[1]'
-    else
-        docker inspect --format "{{ json .NetworkSettings.Networks }}" "$CONTAINER" | \
+    docker inspect --format "{{ json .NetworkSettings.Networks }}" "$CONTAINER" | \
             jq -r '.[] | .DNSNames[1]'
-    fi
     set +x
 }
 
