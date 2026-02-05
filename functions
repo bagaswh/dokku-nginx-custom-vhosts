@@ -283,9 +283,9 @@ app_containers_get() {
   dokku_home_dir="$(get_dokku_user_home)"
 
   if [[ -n "$PROCESS_TYPE" ]]; then
-    pattern="CONTAINER.$PROCESS_TYPE*"
+    pattern="CONTAINER.$PROCESS_TYPE.*"
   else
-    pattern="CONTAINER*"
+    pattern="CONTAINER.*"
   fi
 
   # Read files into array properly
