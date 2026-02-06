@@ -34,10 +34,12 @@ trigger-nginx-custom-post-extract() {
   declare APP="$1" SOURCECODE_WORK_DIR="$2"
   local app_source_image
 
-  echo "Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
+  log_info "Running trigger trigger-nginx-custom-post-extract"
+
+  log_info "Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
 
   if [[ "$(get_app_proxy_type "$APP")" != "$PROXY_NAME" ]]; then
-    echo "[trigger-nginx-custom-post-extract] Quitting"
+    log_info "[trigger-nginx-custom-post-extract] Quitting"
     return
   fi
 

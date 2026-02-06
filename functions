@@ -316,7 +316,7 @@ get_container_dns_names() {
     
     set -x
     docker inspect --format "{{ json .NetworkSettings.Networks }}" "$CONTAINER" | \
-            jq -r '.[] | .DNSNames[1]'
+            jq -r '.[] | .DNSNames[1] // empty'
     set +x
 }
 

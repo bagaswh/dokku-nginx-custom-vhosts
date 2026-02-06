@@ -24,6 +24,11 @@ is_in_array() {
   return 1
 }
 
+log_info() {
+  declare desc="log info"
+  dokku_log_info2 "[$PROXY_NAME]" $@
+}
+
 get_dokku_user() {
   declare desc="get dokku user"
   echo $DOKKU_SYSTEM_USER

@@ -13,10 +13,11 @@ trigger-nginx-custom-scheduler-post-deploy() {
   declare APP="$1"
   local HAS_NETWORK_CONFIG
 
-  echo "Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
+  log_info "Running trigger trigger-nginx-custom-scheduler-post-deploy"
+  log_info "Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
 
   if [[ "$(get_app_proxy_type "$APP")" != "$PROXY_NAME" ]]; then
-    echo "[trigger-nginx-custom-scheduler-post-deploy] Quitting"
+    log_info "[trigger-nginx-custom-scheduler-post-deploy] Quitting"
     return
   fi
 

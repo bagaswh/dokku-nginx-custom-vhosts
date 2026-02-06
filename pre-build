@@ -13,12 +13,12 @@ trigger-nginx-custom-pre-build() {
   declare APP="$2"
   local HAS_NETWORK_CONFIG
 
-  echo "trigger-nginx-custom-pre-build" $@
-  echo "App: $APP"
+  log_info "Running trigger trigger-nginx-custom-pre-build" $@
+  log_info "App: $APP"
 
-  echo "[pre-build] Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
+  log_info "[pre-build] Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
   if [[ "$(get_app_proxy_type "$APP")" != "$PROXY_NAME" ]]; then
-    echo "[trigger-nginx-custom-pre-build] Quitting for app $APP"
+    log_info "[trigger-nginx-custom-pre-build] Quitting for app $APP"
     return
   fi
 
