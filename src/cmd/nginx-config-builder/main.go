@@ -833,6 +833,7 @@ func main() {
 			}
 			return p
 		},
+		"normalize_path": normalizePath,
 	}
 	sigil.Register(tmplFuncs)
 
