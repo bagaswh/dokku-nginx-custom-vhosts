@@ -35,10 +35,23 @@ trigger-nginx-custom-post-extract() {
   local app_source_image
 
   log_info "Running trigger trigger-nginx-custom-post-extract"
-
   log_info "Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
 
-  if [[ "$(get_app_proxy_type "$APP")" != "$PROXY_NAME" ]]; then
+  local proxy_enabled
+  local proxy_type
+  proxy_enabled="$(plugn trigger proxy-is-enabled "$APP")"
+  proxy_type="$(get_app_proxy_type "$APP")"
+
+  echo "proxy-is-enabled: $proxy_enabled"
+  echo "proxy-is-enabled == true: $([ "$proxy_enabled" == "true" ] && echo yes || echo no)"
+  echo "get_app_proxy_type: $proxy_type"
+  echo "get_app_proxy_type == $PROXY_NAME: $([ "$proxy_type" == "$PROXY_NAME" ] && echo yes || echo no)"
+
+  if [[ "$proxy_enabled" != "true" ]] && [[ "$proxy_type" != "$PROXY_NAME" ]]; then
+    log_info "this aint the proxy brotato"
+  fi
+
+  if ! is_this_the_proxy "$APP"; then
     log_info "[trigger-nginx-custom-post-extract] Quitting"
     return
   fi

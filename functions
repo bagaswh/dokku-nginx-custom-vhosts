@@ -25,6 +25,27 @@ get_app_proxy_type() {
   echo "$type"
 }
 
+is_this_the_proxy() {
+  declare desc="check if the app uses this proxy and enabled"
+  declare APP="$1"
+
+  local proxy_enabled
+  local proxy_type
+  proxy_enabled="$(plugn trigger proxy-is-enabled "$APP")"
+  proxy_type="$(get_app_proxy_type "$APP")"
+
+  # echo "proxy-is-enabled: $proxy_enabled"
+  # echo "proxy-is-enabled == true: $([ "$proxy_enabled" == "true" ] && echo yes || echo no)"
+  # echo "get_app_proxy_type: $proxy_type"
+  # echo "get_app_proxy_type == $PROXY_NAME: $([ "$proxy_type" == "$PROXY_NAME" ] && echo yes || echo no)"
+
+  if [[ "$proxy_enabled" == "true" ]] && [[ "$proxy_type" == "$PROXY_NAME" ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
 restart_nginx() {
   declare desc="restart nginx for given distros"
   declare APP="$1"

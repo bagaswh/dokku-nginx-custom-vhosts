@@ -16,7 +16,7 @@ trigger-nginx-custom-core-post-delete() {
   log_info "Running trigger trigger-nginx-custom-core-post-delete"
   log_info "Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
 
-  if [[ "$(get_app_proxy_type "$APP")" != "$PROXY_NAME" ]]; then
+  if ! is_this_the_proxy "$APP"; then
     log_info "[trigger-nginx-custom-core-post-delete] Quitting"
     return
   fi
