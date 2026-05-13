@@ -12,17 +12,19 @@ BUILD ?= $(AVAILABLE_COMMANDS)
 .PHONY: build-in-docker build clean src-clean $(AVAILABLE_COMMANDS)
 
 $(AVAILABLE_COMMANDS): %: clean-%
-	@echo "Building $@ in Docker..."
 	@mkdir -p $(GO_BUILD_CACHE) $(GO_MOD_CACHE)
-	@docker run --rm \
-		-v $(shell pwd):/go/src/nginx-custom \
+	@cid=$$(docker create \
 		-v $(GO_BUILD_CACHE):/root/.cache \
 		-v $(GO_MOD_CACHE):/go/pkg/mod \
 		-e GO111MODULE=on \
 		-w /go/src/nginx-custom \
 		$(BUILD_IMAGE) \
-		bash -c "CGO_ENABLED=0 GOFLAGS=-buildvcs=false GOOS=linux GOARCH=$(GOARCH) GOWORK=off go build -ldflags='-s -w' $(GO_ARGS) -o $@ ./src/cmd/$@" || exit $$?
-
+		bash -c "CGO_ENABLED=0 GOFLAGS=-buildvcs=false GOOS=linux GOARCH=$(GOARCH) GOWORK=off go build -ldflags='-s -w' $(GO_ARGS) -o /out/$@ ./src/cmd/$@"); \
+	docker cp $(shell pwd)/. $$cid:/go/src/nginx-custom; \
+	docker start -a $$cid; \
+	docker cp $$cid:/out/$@ ./; \
+	docker rm $$cid
+	
 clean-%:
 	@rm -f $(shell echo $* | sed 's/.*/&/')
 
