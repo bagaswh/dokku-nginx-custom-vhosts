@@ -13,6 +13,8 @@ trigger-nginx-custom-pre-build() {
   declare APP="$2"
   local HAS_NETWORK_CONFIG
 
+  log_info "Plugin ${PROXY_NAME} is running as user $(whoami) ($(id -u))"
+
   log_info "Running trigger trigger-nginx-custom-pre-build" $@
   log_info "App: $APP"
   log_info "[pre-build] Proxy type:" "$(get_app_proxy_type "$APP"); PROXY_NAME: $PROXY_NAME"
