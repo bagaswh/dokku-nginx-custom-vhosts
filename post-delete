@@ -6,6 +6,7 @@ _DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$PLUGIN_CORE_AVAILABLE_PATH/common/functions"
 source "$_DIR/config"
 source "$_DIR/functions"
+source "$_DIR/internal-functions"
 
 trigger-nginx-custom-core-post-delete() {
   declare desc="${PROXY_NAME} core-post-delete plugin trigger"
@@ -21,6 +22,9 @@ trigger-nginx-custom-core-post-delete() {
     return
   fi
   
+  data_dir="$(fn-get-data-dir $APP)/app-${APP}/"
+  test -d "$data_dir" && rm -rf "$data_dir"
+
   nginx_test_command="$(get_nginx_test_command)"
   $nginx_test_command || dokku_log_fail "nginx config test failed"
   restart_nginx "$APP" || dokku_log_fail "nginx restart failed"
