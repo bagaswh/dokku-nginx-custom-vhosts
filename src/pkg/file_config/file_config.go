@@ -25,6 +25,20 @@ type UpstreamServerFlags struct {
 	Flags    map[string]string `yaml:"flags" validate:"required" json:"flags"`
 }
 
+type UpstreamServerOverride struct {
+	Selector     string            `yaml:"selector" validate:"required" json:"selector"`
+	Flags        map[string]string `yaml:"flags" validate:"omitempty" json:"flags"`
+	DisableFlags []string          `yaml:"disable_flags" validate:"omitempty" json:"disable_flags"`
+}
+
+type UpstreamOverride struct {
+	SelectProcessType string                 `yaml:"select_process_type" validate:"required" json:"select_process_type"`
+	SelectPort        string                 `yaml:"select_port" validate:"required" json:"select_port"`
+	Directives        []string               `yaml:"directives" validate:"omitempty" json:"directives"`
+	Zone              NullableUpstreamZone   `yaml:"zone" validate:"omitempty" json:"zone"`
+	ServerOverrides   []UpstreamServerOverride `yaml:"server_overrides" validate:"omitempty,dive" json:"server_overrides"`
+}
+
 type UpstreamZoneConfig struct {
 	// If unset, builder chooses a sane default.
 	Name string `yaml:"name" validate:"omitempty" json:"name"`
@@ -56,6 +70,40 @@ func (n *NullableUpstreamZone) UnmarshalYAML(node *yaml.Node) error {
 		return err
 	}
 	n.Value = v
+	return nil
+}
+
+func (u *UpstreamOverride) UnmarshalYAML(node *yaml.Node) error {
+	type upstreamOverrideAlias UpstreamOverride
+	var aux upstreamOverrideAlias
+	if err := node.Decode(&aux); err != nil {
+		return err
+	}
+
+	// Detect explicit `zone: null` vs absence.
+	if node != nil && node.Kind == yaml.MappingNode {
+		for i := 0; i < len(node.Content)-1; i += 2 {
+			k := node.Content[i]
+			v := node.Content[i+1]
+			if k != nil && k.Value == "zone" {
+				aux.Zone.IsSet = true
+				if v == nil || (v.Kind == yaml.ScalarNode && v.Tag == "!!null") {
+					aux.Zone.IsNull = true
+					aux.Zone.Value = UpstreamZoneConfig{}
+				} else {
+					aux.Zone.IsNull = false
+					var z UpstreamZoneConfig
+					if err := v.Decode(&z); err != nil {
+						return err
+					}
+					aux.Zone.Value = z
+				}
+				break
+			}
+		}
+	}
+
+	*u = UpstreamOverride(aux)
 	return nil
 }
 
@@ -150,6 +198,7 @@ type Config struct {
 
 	UpstreamAddressmode string           `yaml:"upstream_address_mode" validate:"oneof=ip dns" json:"upstream_address_mode"`
 	Upstreams           []UpstreamConfig `yaml:"upstreams" validate:"omitempty,dive" json:"upstreams"`
+	UpstreamOverrides   []UpstreamOverride `yaml:"upstream_overrides" validate:"omitempty,dive" json:"upstream_overrides"`
 	Maps                []MapConfig      `yaml:"maps" validate:"omitempty,dive" json:"maps"`
 	ProxyCaches         []CacheConfig    `yaml:"proxy_caches" validate:"omitempty,dive" json:"proxy_caches"`
 	FastcgiCaches       []CacheConfig    `yaml:"fastcgi_caches" validate:"omitempty,dive" json:"fastcgi_caches"`

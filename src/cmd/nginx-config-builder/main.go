@@ -72,6 +72,7 @@ type upstreamServer struct {
 	Flags        map[string]string `json:"flags"`
 	FlagsString  string            `json:"flagsString"`
 	DisableFlags []string          `json:"disableFlags"`
+	Listener     string            `json:"listener"`
 }
 
 type upstreamConfig struct {
@@ -89,6 +90,16 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 	upstreamResultingNames := make(upstreamResultingNames, 0)
 
 	zoneDefaultSize := "64k"
+
+	overrideKey := func(processType string, port string) string {
+		return fmt.Sprintf("%s-%s", processType, port)
+	}
+
+	overridesByRefName := make(map[string][]file_config.UpstreamOverride)
+	for _, o := range config.UpstreamOverrides {
+		ref := overrideKey(o.SelectProcessType, o.SelectPort)
+		overridesByRefName[ref] = append(overridesByRefName[ref], o)
+	}
 
 	upstreamZoneNameFor := func(generatedUpstreamName string) string {
 		// Must be unique across upstream blocks. Use a deterministic name derived
@@ -113,6 +124,66 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 		}
 		_, hasResolve := flags["resolve"]
 		return hasResolve
+	}
+
+	removeFlag := func(flags map[string]string, k string) {
+		if flags == nil {
+			return
+		}
+		delete(flags, k)
+	}
+
+	applyDisableFlags := func(flags map[string]string, disableFlags []string) {
+		for _, k := range disableFlags {
+			removeFlag(flags, k)
+		}
+	}
+
+	uniqueAppend := func(dst []string, src ...string) []string {
+		for _, s := range src {
+			if s == "" {
+				continue
+			}
+			if !containsString(dst, s) {
+				dst = append(dst, s)
+			}
+		}
+		return dst
+	}
+
+	applyZoneConfig := func(refName string, generatedUpstreamName string, zone file_config.NullableUpstreamZone) (enabled bool, zoneLine string, err error) {
+		enabled = true
+		zoneName := upstreamZoneNameFor(generatedUpstreamName)
+		zoneSize := zoneDefaultSize
+		if zone.IsSet {
+			if zone.IsNull {
+				enabled = false
+				return enabled, "", nil
+			}
+			if zone.Value.Name != "" {
+				zoneName = zone.Value.Name
+			}
+			if zone.Value.Size != "" {
+				zoneSize = zone.Value.Size
+			}
+		}
+		return enabled, fmt.Sprintf("zone %s %s;", zoneName, zoneSize), nil
+	}
+
+	compileServerOverrideMatchers := func(refName string, overrides []file_config.UpstreamOverride) ([]*regexp.Regexp, []file_config.UpstreamServerOverride, error) {
+		matchers := make([]*regexp.Regexp, 0)
+		serverOverrides := make([]file_config.UpstreamServerOverride, 0)
+		for oi, o := range overrides {
+			for si, so := range o.ServerOverrides {
+				re, err := regexp.Compile(so.Selector)
+				if err != nil {
+					return nil, nil, fmt.Errorf("invalid upstream_overrides entry #%d for %q: invalid server_overrides #%d selector %q: %w", oi, refName, si, so.Selector, err)
+				}
+				matchers = append(matchers, re)
+				serverOverrides = append(serverOverrides, so)
+			}
+		}
+		return matchers, serverOverrides, nil
 	}
 
 	normalizeUpstreamDirectives := func(raw []string) ([]string, error) {
@@ -163,15 +234,53 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 
 			uc, ok := upstreamConfigs[refName]
 			if !ok {
-				generatedZoneName := upstreamZoneNameFor(generatedUpstreamName)
+				zoneEnabled, zoneLine, err := applyZoneConfig(refName, generatedUpstreamName, file_config.NullableUpstreamZone{})
+				if err != nil {
+					return "", nil, err
+				}
+
+				directives := make([]string, 0)
+				overrideList := overridesByRefName[refName]
+				if len(overrideList) > 0 {
+					// Apply upstream-level overrides in order.
+					for _, o := range overrideList {
+						if o.Zone.IsSet {
+							zoneEnabled, zoneLine, err = applyZoneConfig(refName, generatedUpstreamName, o.Zone)
+							if err != nil {
+								return "", nil, err
+							}
+						}
+						if len(o.Directives) > 0 {
+							d, err := normalizeUpstreamDirectives(o.Directives)
+							if err != nil {
+								return "", nil, fmt.Errorf("invalid upstream_overrides for %q directives: %w", refName, err)
+							}
+							directives = append(directives, d...)
+						}
+					}
+				}
+
+				// Default behavior: zone is enabled unless overridden, with default size.
+				// If zone is enabled, default-enable resolve on all default-upstream servers.
 				upstreamConfigs[refName] = &upstreamConfig{
 					GeneratedUpstreamName: generatedUpstreamName,
 					Servers:               make([]upstreamServer, 0),
-					Directives:            make([]string, 0),
-					ZoneLine:              fmt.Sprintf("zone %s %s;", generatedZoneName, zoneDefaultSize),
+					Directives:            directives,
+					ZoneLine:              zoneLine,
 				}
 				uc = upstreamConfigs[refName]
+
+				_ = zoneEnabled // used implicitly via uc.ZoneLine below
 			}
+
+			overrideList := overridesByRefName[refName]
+			serverMatchers, serverOverrides, err := compileServerOverrideMatchers(refName, overrideList)
+			if err != nil {
+				return "", nil, err
+			}
+
+			// Determine zone enabled for this upstream based on uc.ZoneLine.
+			zoneEnabled := uc.ZoneLine != ""
 
 			for _, listener := range listeners {
 				listenerSplit := strings.Split(listener, ":")
@@ -180,12 +289,43 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 					continue
 				}
 				addr := listenerSplit[0]
-				flags := map[string]string{
-					"resolve": "",
+
+				flags := map[string]string{}
+				disableFlags := make([]string, 0)
+
+				// Default behavior: `resolve` is enabled for each server unless explicitly disabled.
+				// If zone is disabled, this will be rejected unless the user also disables `resolve`.
+				flags["resolve"] = ""
+
+				// Apply per-server overrides (by listener match) in order.
+				for i := range serverOverrides {
+					so := serverOverrides[i]
+					if !serverMatchers[i].MatchString(addr) {
+						continue
+					}
+					if so.Flags != nil {
+						for k, v := range so.Flags {
+							flags[k] = v
+						}
+					}
+					disableFlags = uniqueAppend(disableFlags, so.DisableFlags...)
 				}
+
+				// Apply disable flags effects (generic).
+				applyDisableFlags(flags, disableFlags)
+
+				// Enforce zone requirements.
+				if !zoneEnabled {
+					if isZoneRequiredByServer(flags, disableFlags) {
+						return "", nil, fmt.Errorf("default upstream %q has zone disabled but server %q still enables zone-dependent flag %q (disable it with server_overrides.disable_flags: ['resolve'] or enable zone)", refName, fmt.Sprintf("%s:%s", addr, port), "resolve")
+					}
+				}
+
 				uc.Servers = append(uc.Servers, upstreamServer{
-					Addr:  fmt.Sprintf("%s:%s", addr, port),
-					Flags: flags,
+					Addr:         fmt.Sprintf("%s:%s", addr, port),
+					Flags:        flags,
+					DisableFlags: disableFlags,
+					Listener:     addr,
 				})
 			}
 		}
@@ -231,12 +371,14 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 				server.Flags = map[string]string{}
 			}
 
-			// If zone is enabled, default-enable `resolve` per server.
-			if zoneEnabled && !containsString(server.DisableFlags, "resolve") {
+			// Default behavior: `resolve` is enabled for each server unless explicitly disabled.
+			// If zone is disabled, this will be rejected unless the user also disables `resolve`.
+			if !containsString(server.DisableFlags, "resolve") {
 				if _, ok := server.Flags["resolve"]; !ok {
 					server.Flags["resolve"] = ""
 				}
 			}
+			applyDisableFlags(server.Flags, server.DisableFlags)
 
 			// If zone is disabled, enforce: no zone-dependent server flags can be present.
 			if !zoneEnabled {
@@ -298,7 +440,9 @@ upstream {{ $value.GeneratedUpstreamName }} {
 		"sys_vars":        config.SysVars,
 	}
 
-	fmt.Println(upstreamConfigs)
+	// Deployment-time introspection: log the fully computed upstream model (names, zone,
+	// directives, servers, and server flags) before rendering to nginx config text.
+	log.Printf("[nginx-config-builder] computed_upstreams=%s", prettyJSON(upstreamConfigs))
 
 	result, err := sigil.Execute([]byte(templateStr), dataRaw, "upstream_config")
 	if err != nil {

@@ -71,6 +71,22 @@ upstreams:
         flags:
           weight: "1"
 
+upstream_overrides:
+  # Override default/generated upstreams (those created from Dokku listeners + PROXY_UPSTREAM_PORTS).
+  #
+  # This example targets the default upstream for process "web" port 5000 and:
+  # - adds keepalive to the upstream block
+  # - disables zone (zone: null)
+  # - disables resolve for all servers (required when zone is disabled)
+  - select_process_type: "web"
+    select_port: "5000"
+    directives:
+      - "keepalive 10"
+    zone: null
+    server_overrides:
+      - selector: ".*"
+        disable_flags: ["resolve"]
+
   - name: static_backend
     servers:
       - addr: "127.0.0.1:3000"
