@@ -23,8 +23,12 @@ upstream_address_mode: dns
 upstreams:
   # - select_process_type: "web"
   #   select_port: "5000"
-  #   upstream_block_directives:
+  #   directives:
   #     - "keepalive 10"
+  #   zone:
+  #     # If omitted: zone is enabled with defaults (size 64k).
+  #     # zone: null disables the zone (and disables the default `resolve` server flag requirement).
+  #     size: 128k
   #   default_servers_flags:
   #     - flags:
   #         weight: "3"
@@ -38,6 +42,8 @@ upstreams:
   #         weight: "1"
 
   - name: websocket_proxy
+    directives:
+      - "keepalive 32"
     servers:
       - addr: "127.0.0.1:8001"
         flags:
@@ -54,11 +60,14 @@ upstreams:
           backup:
 
   - name: grpc_backend
+    zone: null
     servers:
       - addr: "127.0.0.1:9001"
+        disable_flags: ["resolve"]
         flags:
           weight: "1"
       - addr: "127.0.0.1:9002"
+        disable_flags: ["resolve"]
         flags:
           weight: "1"
 

@@ -68,14 +68,17 @@ type upstreamConfigTemplateData struct {
 }
 
 type upstreamServer struct {
-	Addr        string            `json:"addr"`
-	Flags       map[string]string `json:"flags"`
-	FlagsString string            `json:"flagsString"`
+	Addr         string            `json:"addr"`
+	Flags        map[string]string `json:"flags"`
+	FlagsString  string            `json:"flagsString"`
+	DisableFlags []string          `json:"disableFlags"`
 }
 
 type upstreamConfig struct {
 	GeneratedUpstreamName string           `json:"generatedUpstreamName"`
 	Servers               []upstreamServer `json:"servers"`
+	Directives            []string         `json:"directives"`
+	ZoneLine              string           `json:"zoneLine"`
 }
 
 type upstreamResultingNames map[string]string
@@ -84,6 +87,60 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 	upstreamConfigs := make(map[string]*upstreamConfig, 0)
 
 	upstreamResultingNames := make(upstreamResultingNames, 0)
+
+	zoneDefaultSize := "64k"
+
+	upstreamZoneNameFor := func(generatedUpstreamName string) string {
+		// Must be unique across upstream blocks. Use a deterministic name derived
+		// from upstream name so we don't accidentally collide.
+		return fmt.Sprintf("%s_zone", generatedUpstreamName)
+	}
+
+	containsString := func(list []string, s string) bool {
+		for _, v := range list {
+			if v == s {
+				return true
+			}
+		}
+		return false
+	}
+
+	isZoneRequiredByServer := func(flags map[string]string, disableFlags []string) bool {
+		// Today, we only enforce the officially-supported shared-memory requirement
+		// for `resolve`.
+		if containsString(disableFlags, "resolve") {
+			return false
+		}
+		_, hasResolve := flags["resolve"]
+		return hasResolve
+	}
+
+	normalizeUpstreamDirectives := func(raw []string) ([]string, error) {
+		out := make([]string, 0, len(raw))
+		for _, d := range raw {
+			d = strings.TrimSpace(d)
+			if d == "" {
+				continue
+			}
+			// `zone` must be configured via schema, not raw directives.
+			if strings.HasPrefix(d, "zone ") || d == "zone" || strings.HasPrefix(d, "zone\t") {
+				return nil, fmt.Errorf("upstream directive %q is not allowed; use upstream.zone schema instead", d)
+			}
+			dOut, err := sigil.Execute([]byte(d), map[string]any{"vars": config.UserVars, "sys_vars": config.SysVars}, "upstream_directive")
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse upstream directive template %q: %w", d, err)
+			}
+			rendered := strings.TrimSpace(dOut.String())
+			if rendered == "" {
+				continue
+			}
+			if !strings.HasSuffix(rendered, ";") {
+				rendered += ";"
+			}
+			out = append(out, rendered)
+		}
+		return out, nil
+	}
 
 	// default upstreams
 	for _, port := range data.UpstreamPorts {
@@ -106,9 +163,12 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 
 			uc, ok := upstreamConfigs[refName]
 			if !ok {
+				generatedZoneName := upstreamZoneNameFor(generatedUpstreamName)
 				upstreamConfigs[refName] = &upstreamConfig{
 					GeneratedUpstreamName: generatedUpstreamName,
 					Servers:               make([]upstreamServer, 0),
+					Directives:            make([]string, 0),
+					ZoneLine:              fmt.Sprintf("zone %s %s;", generatedZoneName, zoneDefaultSize),
 				}
 				uc = upstreamConfigs[refName]
 			}
@@ -120,8 +180,12 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 					continue
 				}
 				addr := listenerSplit[0]
+				flags := map[string]string{
+					"resolve": "",
+				}
 				uc.Servers = append(uc.Servers, upstreamServer{
-					Addr: fmt.Sprintf("%s:%s", addr, port),
+					Addr:  fmt.Sprintf("%s:%s", addr, port),
+					Flags: flags,
 				})
 			}
 		}
@@ -133,17 +197,65 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 			continue
 		}
 		generatedUpstreamName := fmt.Sprintf("%s-%s", appName, upstream.Name)
+
+		zoneEnabled := true
+		zoneName := upstreamZoneNameFor(generatedUpstreamName)
+		zoneSize := zoneDefaultSize
+		if upstream.Zone.IsSet {
+			if upstream.Zone.IsNull {
+				zoneEnabled = false
+			} else {
+				if upstream.Zone.Value.Name != "" {
+					zoneName = upstream.Zone.Value.Name
+				}
+				if upstream.Zone.Value.Size != "" {
+					zoneSize = upstream.Zone.Value.Size
+				}
+			}
+		}
+
+		directives, err := normalizeUpstreamDirectives(upstream.Directives)
+		if err != nil {
+			return "", nil, fmt.Errorf("invalid upstream %q directives: %w", upstream.Name, err)
+		}
+
 		upstreamConfigs[upstream.Name] = &upstreamConfig{
 			GeneratedUpstreamName: generatedUpstreamName,
+			Directives:            directives,
 		}
 		upstreamResultingNames[upstream.Name] = generatedUpstreamName
 		uc := upstreamConfigs[upstream.Name]
 		uc.Servers = make([]upstreamServer, 0)
 		for _, server := range upstream.Servers {
+			if server.Flags == nil {
+				server.Flags = map[string]string{}
+			}
+
+			// If zone is enabled, default-enable `resolve` per server.
+			if zoneEnabled && !containsString(server.DisableFlags, "resolve") {
+				if _, ok := server.Flags["resolve"]; !ok {
+					server.Flags["resolve"] = ""
+				}
+			}
+
+			// If zone is disabled, enforce: no zone-dependent server flags can be present.
+			if !zoneEnabled {
+				if isZoneRequiredByServer(server.Flags, server.DisableFlags) {
+					return "", nil, fmt.Errorf("upstream %q has zone disabled but server %q still enables zone-dependent flag %q (disable it with disable_flags: ['resolve'] or enable zone)", upstream.Name, server.Addr, "resolve")
+				}
+			}
+
 			uc.Servers = append(uc.Servers, upstreamServer{
-				Addr:  server.Addr,
-				Flags: server.Flags,
+				Addr:         server.Addr,
+				Flags:        server.Flags,
+				DisableFlags: server.DisableFlags,
 			})
+		}
+
+		if zoneEnabled {
+			uc.ZoneLine = fmt.Sprintf("zone %s %s;", zoneName, zoneSize)
+		} else {
+			uc.ZoneLine = ""
 		}
 	}
 
@@ -168,6 +280,12 @@ func buildUpstreamConfig(appName string, config *file_config.Config, data *upstr
 
 	templateStr := `{{- range $key, $value := $.upstreamConfigs -}}
 upstream {{ $value.GeneratedUpstreamName }} {
+{{- if $value.ZoneLine }}
+  {{ $value.ZoneLine }}
+{{- end }}
+{{- range $line := $value.Directives }}
+  {{ $line }}
+{{- end }}
 {{- range $server := $value.Servers }}
   server {{ $server.Addr }} {{- if $server.FlagsString }} {{ $server.FlagsString }}{{ end -}};
 {{- end }}

@@ -15,8 +15,9 @@ import (
 )
 
 type UpstreamServer struct {
-	Addr  string            `yaml:"addr" validate:"required" json:"addr"`
-	Flags map[string]string `yaml:"flags" validate:"required" json:"flags"`
+	Addr         string            `yaml:"addr" validate:"required" json:"addr"`
+	Flags        map[string]string `yaml:"flags" validate:"required" json:"flags"`
+	DisableFlags []string          `yaml:"disable_flags" validate:"omitempty" json:"disable_flags"`
 }
 
 type UpstreamServerFlags struct {
@@ -24,13 +25,83 @@ type UpstreamServerFlags struct {
 	Flags    map[string]string `yaml:"flags" validate:"required" json:"flags"`
 }
 
+type UpstreamZoneConfig struct {
+	// If unset, builder chooses a sane default.
+	Name string `yaml:"name" validate:"omitempty" json:"name"`
+	// Nginx size like "64k", "1m". If unset, builder defaults to 64k.
+	Size string `yaml:"size" validate:"omitempty" json:"size"`
+}
+
+// NullableUpstreamZone allows distinguishing:
+// - absent field (IsSet=false)
+// - explicit YAML null (IsSet=true, IsNull=true)
+// - present object (IsSet=true, IsNull=false, Value=...)
+type NullableUpstreamZone struct {
+	IsSet  bool
+	IsNull bool
+	Value  UpstreamZoneConfig
+}
+
+func (n *NullableUpstreamZone) UnmarshalYAML(node *yaml.Node) error {
+	n.IsSet = true
+	if node == nil || node.Kind == yaml.ScalarNode && node.Tag == "!!null" {
+		n.IsNull = true
+		n.Value = UpstreamZoneConfig{}
+		return nil
+	}
+
+	n.IsNull = false
+	var v UpstreamZoneConfig
+	if err := node.Decode(&v); err != nil {
+		return err
+	}
+	n.Value = v
+	return nil
+}
+
 type UpstreamConfig struct {
 	// Select and Name are mutually exclusive
 	// SelectProcessType   string                `yaml:"select_process_type" validate:"excluded_with=Name,excluded_with=Servers" json:"select_process_type"`
 	// DefaultServersFlags []UpstreamServerFlags `yaml:"default_servers_flags" validate:"required_with=SelectFromProcessType" json:"default_servers_flags"`
 
-	Name    string           `yaml:"name" validate:"required_if=SelectProcessType ''" json:"name"`
-	Servers []UpstreamServer `yaml:"servers" validate:"required_if=Name true,excluded_with=select_process_type" json:"servers"`
+	Name       string               `yaml:"name" validate:"required_if=SelectProcessType ''" json:"name"`
+	Servers    []UpstreamServer     `yaml:"servers" validate:"required_if=Name true,excluded_with=select_process_type" json:"servers"`
+	Directives []string             `yaml:"directives" validate:"omitempty" json:"directives"`
+	Zone       NullableUpstreamZone `yaml:"zone" validate:"omitempty" json:"zone"`
+}
+
+func (u *UpstreamConfig) UnmarshalYAML(node *yaml.Node) error {
+	type upstreamConfigAlias UpstreamConfig
+	var aux upstreamConfigAlias
+	if err := node.Decode(&aux); err != nil {
+		return err
+	}
+
+	// Detect explicit `zone: null` vs absence.
+	if node != nil && node.Kind == yaml.MappingNode {
+		for i := 0; i < len(node.Content)-1; i += 2 {
+			k := node.Content[i]
+			v := node.Content[i+1]
+			if k != nil && k.Value == "zone" {
+				aux.Zone.IsSet = true
+				if v == nil || (v.Kind == yaml.ScalarNode && v.Tag == "!!null") {
+					aux.Zone.IsNull = true
+					aux.Zone.Value = UpstreamZoneConfig{}
+				} else {
+					aux.Zone.IsNull = false
+					var z UpstreamZoneConfig
+					if err := v.Decode(&z); err != nil {
+						return err
+					}
+					aux.Zone.Value = z
+				}
+				break
+			}
+		}
+	}
+
+	*u = UpstreamConfig(aux)
+	return nil
 }
 
 type LocationConfig struct {
@@ -173,6 +244,10 @@ func ReadConfig(path string) (*Config, any, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	return ReadConfigBytes(data)
+}
+
+func ReadConfigBytes(data []byte) (*Config, any, error) {
 
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
