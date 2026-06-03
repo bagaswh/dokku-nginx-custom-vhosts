@@ -828,6 +828,10 @@ func copyConfigToRelease(configContent string, releaseDir string, filename strin
 	if err := os.WriteFile(configPath, []byte(configContent), configFileMode); err != nil {
 		return fmt.Errorf("failed to write config file %s: %w", filename, err)
 	}
+	// mode is sometimes ignored, do chmod explicitly
+	if err := os.Chmod(configPath, configFileMode); err != nil {
+		return fmt.Errorf("failed to chmod config file %s: %w", filename, err)
+	}
 
 	log.Printf("[DEBUG] chowning file %s with uid %d and gid %d\n", configPath, chown.uid, chown.gid)
 	if err := os.Chown(configPath, chown.uid, chown.gid); err != nil {
