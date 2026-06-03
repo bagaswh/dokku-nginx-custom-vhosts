@@ -100,6 +100,36 @@ fn-nginx-custom-config-file() {
   fn-get-property --app "$APP" --computed "config-file"
 }
 
+fn-nginx-custom-config-file-mode() {
+  declare desc="retrieves config file mode from config-file-mode property"
+  declare APP="$1"
+  mode=$(fn-get-property --app "$APP" --computed "config-file-mode")
+  if [[ -z "$mode" ]]; then
+    mode="0644"
+  fi
+  echo "$mode"
+}
+
+fn-nginx-custom-config-file-owner-uid() {
+  declare desc="retrieves config file owner uid from config-file-owner-uid property"
+  declare APP="$1"
+  uid=$(fn-get-property --app "$APP" --computed "config-file-owner-uid")
+  if [[ -z "$uid" ]]; then
+    uid="$(id -u "$DOKKU_SYSTEM_USER")"
+  fi
+  echo "$uid"
+}
+
+fn-nginx-custom-config-file-owner-gid() {
+  declare desc="retrieves config file owner gid from config-file-owner-gid property"
+  declare APP="$1"
+  gid=$(fn-get-property --app "$APP" --computed "config-file-owner-gid")
+  if [[ -z "$gid" ]]; then
+    gid="$(id -g "$DOKKU_SYSTEM_USER")"
+  fi
+  echo "$gid"
+}
+
 fn-nginx-custom-config-files-root-dir() {
   declare desc="retrieves config files root dir from config-files-root-dir property"
   declare APP="$1"

@@ -279,7 +279,7 @@ func TestDeploymentFunctions(t *testing.T) {
 		configContent := "test config content"
 		filename := "test.conf"
 
-		err := copyConfigToRelease(configContent, releaseDir, filename)
+		err := copyConfigToRelease(configContent, releaseDir, filename, 0644, chown{})
 		if err != nil {
 			t.Errorf("Expected no error, got: %v", err)
 		}
@@ -307,7 +307,7 @@ func TestDeploymentFunctions(t *testing.T) {
 		configContent := "vhost config content"
 		filename := "vhosts/example.com/vhost.conf"
 
-		err := copyConfigToRelease(configContent, releaseDir, filename)
+		err := copyConfigToRelease(configContent, releaseDir, filename, 0644, chown{})
 		if err != nil {
 			t.Errorf("Expected no error, got: %v", err)
 		}

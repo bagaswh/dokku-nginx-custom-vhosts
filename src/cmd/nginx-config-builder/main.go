@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
@@ -809,7 +810,11 @@ func getPreviousVersionDirectory(nginxConfigDirectory string) (string, error) {
 	return previousDir, nil
 }
 
-func copyConfigToRelease(configContent string, releaseDir string, filename string) error {
+type chown struct {
+	uid, gid int
+}
+
+func copyConfigToRelease(configContent string, releaseDir string, filename string, configFileMode fs.FileMode, chown chown) error {
 	configPath := path.Join(releaseDir, filename)
 
 	// Create the full directory path including any subdirectories
@@ -819,8 +824,12 @@ func copyConfigToRelease(configContent string, releaseDir string, filename strin
 	}
 
 	// Write the config content to the file
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(configContent), configFileMode); err != nil {
 		return fmt.Errorf("failed to write config file %s: %w", filename, err)
+	}
+
+	if err := os.Chown(configPath, chown.uid, chown.gid); err != nil {
+		return fmt.Errorf("failed to chown config file %s: %w", filename, err)
 	}
 
 	return nil
@@ -930,17 +939,30 @@ func normalizePath(path string) string {
 func main() {
 
 	var appName string
-	var configFilePath string
-	var dokkuAppDataRootDirectory string
-	var nginxTestCommand string
-	var withoutNginxTest bool
 	flag.StringVar(&appName, "app-name", "", "app name")
+	var configFilePath string
 	flag.StringVar(&configFilePath, "config-file-path", "", "path to config file")
+	var dokkuAppDataRootDirectory string
 	flag.StringVar(&dokkuAppDataRootDirectory, "dokku-data-root-directory", "", "dokku data root directory")
+	var nginxTestCommand string
 	flag.StringVar(&nginxTestCommand, "nginx-test-command", "nginx -t", "nginx test command")
+	var withoutNginxTest bool
 	flag.BoolVar(&withoutNginxTest, "without-nginx-test", false, "do not run nginx test")
+	var configFileOwnerUid int
+	flag.IntVar(&configFileOwnerUid, "config-file-owner-uid", 0, "config file owner uid")
+	var configFileOwnerGid int
+	flag.IntVar(&configFileOwnerGid, "config-file-owner-gid", 0, "config file owner gid")
+
+	var configFileModeStr string
+	flag.StringVar(&configFileModeStr, "config-file-mode", "0644", "config file mode (e.g. 0644)")
 
 	flag.Parse()
+
+	modeVal, err := strconv.ParseUint(configFileModeStr, 8, 32)
+	if err != nil {
+		log.Fatalf("invalid config-file-mode %q: %v", configFileModeStr, err)
+	}
+	configFileMode := fs.FileMode(modeVal)
 
 	nginxTestCommandSplit := strings.Split(nginxTestCommand, " ")
 
@@ -1224,7 +1246,7 @@ func main() {
 	}
 
 	for filename, content := range configFiles {
-		if err := copyConfigToRelease(content, latestReleaseDir, filename); err != nil {
+		if err := copyConfigToRelease(content, latestReleaseDir, filename, configFileMode, chown{uid: configFileOwnerUid, gid: configFileOwnerGid}); err != nil {
 			log.Fatalln("failed to copy config file:", err)
 		}
 	}

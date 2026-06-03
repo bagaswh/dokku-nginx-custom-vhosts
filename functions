@@ -209,7 +209,10 @@ nginx_build_config() {
     -app-name "$APP" \
     -config-file-path "$(nginx_get_yaml_config_absolute_path "$APP")" \
     -dokku-data-root-directory "$(fn-get-data-dir $APP)/app-${APP}" \
-    -nginx-test-command "$nginx_test_command"
+    -nginx-test-command "$nginx_test_command" \
+    -config-file-owner-uid "$(fn-nginx-custom-config-file-owner-uid "$APP")" \
+    -config-file-owner-gid "$(fn-nginx-custom-config-file-owner-gid "$APP")" \
+    -config-file-mode "$(fn-nginx-custom-config-file-mode "$APP")"
 }
 
 nginx_yaml_get_config() {
