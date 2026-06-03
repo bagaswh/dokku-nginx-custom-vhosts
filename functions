@@ -188,6 +188,10 @@ nginx_build_config() {
   # for all containers.
   container="$(app_container_get "$APP")"
 
+  dokku_data_root_dir="$(fn-get-data-dir $APP)/app-${APP}"
+  ! test -d "$dokku_data_root_dir" && mkdir -p "$dokku_data_root_dir"
+  chmod 755 "$dokku_data_root_dir"
+
   export DOKKU_APP_CONTAINER_LABELS="$(container_get_labels "$container")"
   export DOKKU_APP_CONTAINER_MOUNTS="$(container_get_mounts "$container")"
   export DOKKU_APP_LISTENERS
@@ -208,7 +212,7 @@ nginx_build_config() {
   "$_DIR/nginx-config-builder" \
     -app-name "$APP" \
     -config-file-path "$(nginx_get_yaml_config_absolute_path "$APP")" \
-    -dokku-data-root-directory "$(fn-get-data-dir $APP)/app-${APP}" \
+    -dokku-data-root-directory "$dokku_data_root_dir" \
     -nginx-test-command "$nginx_test_command" \
     -config-file-owner-uid "$(fn-nginx-custom-config-file-owner-uid "$APP")" \
     -config-file-owner-gid "$(fn-nginx-custom-config-file-owner-gid "$APP")" \
