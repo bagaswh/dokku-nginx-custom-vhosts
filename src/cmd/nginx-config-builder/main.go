@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"dario.cat/mergo"
@@ -962,6 +963,9 @@ func main() {
 	var configFileModeStr string
 	flag.StringVar(&configFileModeStr, "config-file-mode", "0644", "config file mode (e.g. 0644)")
 
+	var umaskStr string
+	flag.StringVar(&umaskStr, "umask", "0022", "umask (e.g. 0022)")
+
 	flag.Parse()
 
 	modeVal, err := strconv.ParseUint(configFileModeStr, 8, 32)
@@ -969,6 +973,13 @@ func main() {
 		log.Fatalf("invalid config-file-mode %q: %v", configFileModeStr, err)
 	}
 	configFileMode := fs.FileMode(modeVal)
+
+	umaskVal, err := strconv.ParseInt(umaskStr, 8, 32)
+	if err != nil {
+		log.Fatalf("invalid umask %q: %v", umaskStr, err)
+	}
+	umask := int(umaskVal)
+	syscall.Umask(umask)
 
 	nginxTestCommandSplit := strings.Split(nginxTestCommand, " ")
 
