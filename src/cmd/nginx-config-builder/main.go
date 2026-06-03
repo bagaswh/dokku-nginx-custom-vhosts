@@ -979,6 +979,7 @@ func main() {
 		log.Fatalf("invalid umask %q: %v", umaskStr, err)
 	}
 	umask := int(umaskVal)
+	log.Printf("[DEBUG] umask=%d\n", umask)
 	syscall.Umask(umask)
 
 	nginxTestCommandSplit := strings.Split(nginxTestCommand, " ")
