@@ -824,10 +824,12 @@ func copyConfigToRelease(configContent string, releaseDir string, filename strin
 	}
 
 	// Write the config content to the file
+	log.Printf("[DEBUG] writing config file %s with mode %s\n", configPath, configFileMode)
 	if err := os.WriteFile(configPath, []byte(configContent), configFileMode); err != nil {
 		return fmt.Errorf("failed to write config file %s: %w", filename, err)
 	}
 
+	log.Printf("[DEBUG] chowning file %s with uid %d and gid %d\n", configPath, chown.uid, chown.gid)
 	if err := os.Chown(configPath, chown.uid, chown.gid); err != nil {
 		return fmt.Errorf("failed to chown config file %s: %w", filename, err)
 	}
