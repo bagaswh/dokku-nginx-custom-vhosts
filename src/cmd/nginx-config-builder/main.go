@@ -1088,7 +1088,7 @@ func main() {
 				filename = params[1]
 			}
 			if filename == "" {
-				filename = fmt.Sprintf("%s.log", appName)
+				filename = fmt.Sprintf("%s_%s.log", typ, appName)
 			}
 			if len(params) == 3 {
 				accessLogFormat = params[2]
