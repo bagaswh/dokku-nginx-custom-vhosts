@@ -81,7 +81,7 @@ trigger-nginx-custom-install() {
 
   make -j "$(nproc)" build-in-docker
 
-  chown -R dokku:dokku /var/lib/dokku/data/${PROXY_NAME}/ 
+  find /var/lib/dokku/data/${PROXY_NAME}/ -type d -exec chown dokku:dokku {} \;
 }
 
 trigger-nginx-custom-install "$@"
