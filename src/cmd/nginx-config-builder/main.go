@@ -943,6 +943,10 @@ func normalizePath(path string) string {
 	return filepath.Clean(path)
 }
 
+func normalizePaths(paths ...string) string {
+	return filepath.Clean(filepath.Join(paths...))
+}
+
 func main() {
 
 	var appName string
@@ -1135,7 +1139,8 @@ func main() {
 			}
 			return p
 		},
-		"normalize_path": normalizePath,
+		"normalize_path":  normalizePath,
+		"normalize_paths": normalizePaths,
 	}
 	sigil.Register(tmplFuncs)
 
