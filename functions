@@ -194,6 +194,7 @@ nginx_build_config() {
 
   export DOKKU_APP_CONTAINER_LABELS="$(container_get_labels "$container")"
   export DOKKU_APP_CONTAINER_MOUNTS="$(container_get_mounts "$container")"
+  export DOKKU_APP_CONTAINER_DETAILS="$(container_inspect "$container")"
   export DOKKU_APP_LISTENERS
   export PROXY_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-proxy-cache-on-disk-root-path "$APP")"
   export PROXY_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-proxy-cache-in-mem-root-path "$APP")"
@@ -368,6 +369,12 @@ container_get_labels() {
     declare CONTAINER="$1"
 
     docker inspect --format='{{json .Config.Labels}}' "$CONTAINER"
+}
+
+container_inspect() {
+    declare CONTAINER="$1"
+
+    docker inspect --format='{{json .}}' "$CONTAINER"
 }
 
 container_get_mounts() {

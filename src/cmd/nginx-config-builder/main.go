@@ -1002,6 +1002,7 @@ func main() {
 		"PROXY_NAME",
 		"DOKKU_APP_CONTAINER_LABELS",
 		"DOKKU_APP_CONTAINER_MOUNTS",
+		"DOKKU_APP_CONTAINER_DETAILS",
 		"DOKKU_APP_LISTENERS",
 		"PROXY_UPSTREAM_PORTS",
 		"PROXY_CACHE_DEFAULT_FLAGS",
@@ -1031,6 +1032,12 @@ func main() {
 		log.Fatalf("error marshaling container labels: %v; labels=%s", containerLabelsUnmarshalErr, os.Getenv("DOKKU_APP_CONTAINER_LABELS"))
 	}
 
+	containerDetails := make(map[string]any)
+	containerDetailsUnmarshalErr := json.Unmarshal([]byte(os.Getenv("DOKKU_APP_CONTAINER_DETAILS")), &containerDetails)
+	if containerDetailsUnmarshalErr != nil {
+		log.Fatalf("error marshaling container details: %v; details=%s", containerDetailsUnmarshalErr, os.Getenv("DOKKU_APP_CONTAINER_DETAILS"))
+	}
+
 	type Mount struct {
 		Type        string `json:"Type"`
 		Source      string `json:"Source"`
@@ -1052,9 +1059,10 @@ func main() {
 	}
 
 	cfg.SysVars = file_config.ConfigVars{
-		"container_labels": containerLabels,
-		"container_mounts": containerMountsMap,
-		"app_name":         appName,
+		"container_labels":  containerLabels,
+		"container_mounts":  containerMountsMap,
+		"container_details": containerDetails,
+		"app_name":          appName,
 	}
 	fmt.Printf("[VARDEBUG] SysVars=%s\n", prettyJSON(cfg.SysVars))
 
