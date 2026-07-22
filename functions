@@ -179,22 +179,35 @@ nginx_build_config() {
   DOKKU_PROCESS_TYPES="$(get_process_types "$APP")"
   UPSTREAM_ADDRESS_MODE="$(nginx-config-get-upstream-address-mode "$APP")"
   DOKKU_APP_LISTENERS="$(get_app_listeners_json "$APP" "$DOKKU_PROCESS_TYPES" "$UPSTREAM_ADDRESS_MODE")"
+  # No scaled processes (e.g. static-only apps) yields an empty object.
+  [[ -z "$DOKKU_APP_LISTENERS" ]] && DOKKU_APP_LISTENERS="{}"
 
   echo -e "DOKKU_APP_LISTENERS: $DOKKU_APP_LISTENERS"
 
   nginx_test_command="$(get_nginx_test_command)"
 
-  # Getting one container is enough since we only use this to get labels and mounts, which mostly are the same
-  # for all containers.
-  container="$(app_container_get "$APP")"
+  # Container metadata is optional: static-only apps may have no running processes/containers.
+  # Getting one container is enough when present (labels/mounts are typically shared).
+  container=""
+  containers="$(app_containers_get "$APP" || true)"
+  if [[ -n "$containers" ]]; then
+    container="$(echo "$containers" | head -n 1)"
+  fi
 
   dokku_data_root_dir="$(fn-get-data-dir $APP)/app-${APP}"
   ! test -d "$dokku_data_root_dir" && mkdir -p "$dokku_data_root_dir"
   chmod 755 "$dokku_data_root_dir"
 
-  export DOKKU_APP_CONTAINER_LABELS="$(container_get_labels "$container")"
-  export DOKKU_APP_CONTAINER_MOUNTS="$(container_get_mounts "$container")"
-  export DOKKU_APP_CONTAINER_DETAILS="$(container_inspect "$container")"
+  if [[ -n "$container" ]]; then
+    export DOKKU_APP_CONTAINER_LABELS="$(container_get_labels "$container")"
+    export DOKKU_APP_CONTAINER_MOUNTS="$(container_get_mounts "$container")"
+    export DOKKU_APP_CONTAINER_DETAILS="$(container_inspect "$container")"
+  else
+    dokku_log_info1 "No running container for $APP; building nginx config without container listeners/metadata (static-only mode)"
+    export DOKKU_APP_CONTAINER_LABELS="{}"
+    export DOKKU_APP_CONTAINER_MOUNTS="[]"
+    export DOKKU_APP_CONTAINER_DETAILS="{}"
+  fi
   export DOKKU_APP_LISTENERS
   export PROXY_CACHE_ON_DISK_ROOT_PATH="$(fn-nginx-custom-proxy-cache-on-disk-root-path "$APP")"
   export PROXY_CACHE_IN_MEM_ROOT_PATH="$(fn-nginx-custom-proxy-cache-in-mem-root-path "$APP")"
@@ -271,41 +284,6 @@ nginx_get_yaml_config_absolute_path() {
   echo "$(fn-get-data-dir $APP)/app-$APP/nginx-custom-config-yaml/$config_file_path"
 }
 
-# Get all containers for the app
-# app_containers_get() {
-#     declare APP_NAME="$1" 
-#     shift
-#     local OPTS=$@
-
-#     containers=$(docker ps \
-#       -q \
-#       --no-trunc \
-#       --filter "label=org.label-schema.vendor=dokku" \
-#       --filter "label=com.dokku.app-name=$APP_NAME" $OPTS
-#     )
-    
-#     if [[ -z "$containers" ]]; then
-#         fail_msg="Container not found for $APP_NAME"
-#         if [[ -n "$OPTS" ]]; then
-#           fail_msg="$fail_msg and options $OPTS"
-#         fi
-#         dokku_log_fail "$fail_msg"
-#     fi
-
-#     # filter containers that end with name the same as label value com.dokku.dyno
-#     filtered_containers=""
-#     for container in $containers; do
-#       inspect="$(docker inspect --format='{{ json . }}' "$container")"
-#       dyno_name="$(echo "$inspect" | jq -r '.Config.Labels."com.dokku.dyno"')"
-#       container_name="$(echo "$inspect" | jq -r '.Name')"
-#       if [[ -n "$dyno_name" ]] && [[ "$container_name" == *"$dyno_name" ]]; then
-#         filtered_containers+="$container"$'\n'
-#       fi
-#     done
-
-#     echo -n "${filtered_containers%$'\n'}"  # Remove trailing newline
-# }
-
 app_containers_get() {
   declare APP_NAME="$1" PROCESS_TYPE="$2"
 
@@ -347,22 +325,6 @@ get_container_dns_names() {
     docker inspect --format "{{ json .NetworkSettings.Networks }}" "$CONTAINER" | \
             jq -r '.[] | .DNSNames[1] // empty'
     set +x
-}
-
-container_get_merged_dir_path() {
-    declare CONTAINER="$1"
-
-    merged_dir_path="$(docker inspect --format='{{.GraphDriver.Data.MergedDir}}' "$CONTAINER")"
-    echo "$merged_dir_path"
-}
-
-container_get_working_dir_path() {
-    declare CONTAINER="$1"
-
-    merged_dir_path=$(container_get_merged_dir_path "$CONTAINER")
-    image="$(docker inspect --format='{{.Image}}' "$CONTAINER")"
-    working_dir_path="$merged_dir_path/$(docker image inspect --format "{{.Config.WorkingDir}}" $image)"
-    echo "$working_dir_path"
 }
 
 container_get_labels() {

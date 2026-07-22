@@ -1027,15 +1027,23 @@ func main() {
 	}
 
 	containerLabels := make(map[string]any)
-	containerLabelsUnmarshalErr := json.Unmarshal([]byte(os.Getenv("DOKKU_APP_CONTAINER_LABELS")), &containerLabels)
+	containerLabelsRaw := strings.TrimSpace(os.Getenv("DOKKU_APP_CONTAINER_LABELS"))
+	if containerLabelsRaw == "" {
+		containerLabelsRaw = "{}"
+	}
+	containerLabelsUnmarshalErr := json.Unmarshal([]byte(containerLabelsRaw), &containerLabels)
 	if containerLabelsUnmarshalErr != nil {
-		log.Fatalf("error marshaling container labels: %v; labels=%s", containerLabelsUnmarshalErr, os.Getenv("DOKKU_APP_CONTAINER_LABELS"))
+		log.Fatalf("error marshaling container labels: %v; labels=%s", containerLabelsUnmarshalErr, containerLabelsRaw)
 	}
 
 	containerDetails := make(map[string]any)
-	containerDetailsUnmarshalErr := json.Unmarshal([]byte(os.Getenv("DOKKU_APP_CONTAINER_DETAILS")), &containerDetails)
+	containerDetailsRaw := strings.TrimSpace(os.Getenv("DOKKU_APP_CONTAINER_DETAILS"))
+	if containerDetailsRaw == "" {
+		containerDetailsRaw = "{}"
+	}
+	containerDetailsUnmarshalErr := json.Unmarshal([]byte(containerDetailsRaw), &containerDetails)
 	if containerDetailsUnmarshalErr != nil {
-		log.Fatalf("error marshaling container details: %v; details=%s", containerDetailsUnmarshalErr, os.Getenv("DOKKU_APP_CONTAINER_DETAILS"))
+		log.Fatalf("error marshaling container details: %v; details=%s", containerDetailsUnmarshalErr, containerDetailsRaw)
 	}
 
 	type Mount struct {
@@ -1048,7 +1056,11 @@ func main() {
 	}
 
 	var containerMounts []Mount
-	containerMountsUnmarshalErr := json.Unmarshal([]byte(os.Getenv("DOKKU_APP_CONTAINER_MOUNTS")), &containerMounts)
+	containerMountsRaw := strings.TrimSpace(os.Getenv("DOKKU_APP_CONTAINER_MOUNTS"))
+	if containerMountsRaw == "" {
+		containerMountsRaw = "[]"
+	}
+	containerMountsUnmarshalErr := json.Unmarshal([]byte(containerMountsRaw), &containerMounts)
 	if containerMountsUnmarshalErr != nil {
 		log.Fatalln("error marshaling container mounts:", containerMountsUnmarshalErr)
 	}
@@ -1149,14 +1161,31 @@ func main() {
 		},
 		"normalize_path":  normalizePath,
 		"normalize_paths": normalizePaths,
+		"tpl": func(tplStr string, context interface{}) (string, error) {
+			ctx, ok := context.(map[string]interface{})
+			if !ok {
+				return "", fmt.Errorf("tpl: context must be map[string]interface{}, got %T", context)
+			}
+			out, err := sigil.Execute([]byte(tplStr), ctx, "inline")
+			if err != nil {
+				return "", err
+			}
+			return out.String(), nil
+		},
 	}
 	sigil.Register(tmplFuncs)
 
-	DOKKU_APP_LISTENERS := os.Getenv("DOKKU_APP_LISTENERS")
+	DOKKU_APP_LISTENERS := strings.TrimSpace(os.Getenv("DOKKU_APP_LISTENERS"))
 	var appListeners map[string][]string
-	appListenersUnmarshalErr := json.Unmarshal([]byte(DOKKU_APP_LISTENERS), &appListeners)
-	if appListenersUnmarshalErr != nil {
-		log.Fatalln("error unmarshaling app listeners:", appListenersUnmarshalErr)
+	// Empty listeners is valid for static-only apps that do not run any processes.
+	if DOKKU_APP_LISTENERS == "" {
+		appListeners = map[string][]string{}
+		fmt.Printf("[VARDEBUG] DOKKU_APP_LISTENERS is empty; treating as no listeners (static-only mode)\n")
+	} else {
+		appListenersUnmarshalErr := json.Unmarshal([]byte(DOKKU_APP_LISTENERS), &appListeners)
+		if appListenersUnmarshalErr != nil {
+			log.Fatalln("error unmarshaling app listeners:", appListenersUnmarshalErr)
+		}
 	}
 	fmt.Printf("[VARDEBUG] appListeners computed=%s\n", prettyJSON(appListeners))
 	webListeners, ok := appListeners["web"]
@@ -1173,10 +1202,19 @@ func main() {
 	}
 	fmt.Printf("[VARDEBUG] filteredAppListeners=%s\n", prettyJSON(filteredAppListeners))
 
+	upstreamPorts := make([]string, 0)
+	for _, port := range strings.Split(os.Getenv("PROXY_UPSTREAM_PORTS"), " ") {
+		port = strings.TrimSpace(port)
+		if port == "" {
+			continue
+		}
+		upstreamPorts = append(upstreamPorts, port)
+	}
+
 	tmplData := upstreamConfigTemplateData{
 		App:           appName,
 		AppListeners:  filteredAppListeners,
-		UpstreamPorts: strings.Split(os.Getenv("PROXY_UPSTREAM_PORTS"), " "),
+		UpstreamPorts: upstreamPorts,
 	}
 
 	upstreamCfgStr, upstreams, err := buildUpstreamConfig(appName, cfg, &tmplData)
