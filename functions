@@ -202,6 +202,7 @@ nginx_build_config() {
     export DOKKU_APP_CONTAINER_LABELS="$(container_get_labels "$container")"
     export DOKKU_APP_CONTAINER_MOUNTS="$(container_get_mounts "$container")"
     export DOKKU_APP_CONTAINER_DETAILS="$(container_inspect "$container")"
+    echo "DOKKU_APP_CONTAINER_DETAILS: $DOKKU_APP_CONTAINER_DETAILS"
   else
     dokku_log_info1 "No running container for $APP; building nginx config without container listeners/metadata (static-only mode)"
     export DOKKU_APP_CONTAINER_LABELS="{}"
