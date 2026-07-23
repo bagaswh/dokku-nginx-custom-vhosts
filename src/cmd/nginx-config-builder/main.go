@@ -623,11 +623,49 @@ func buildFastcgiCacheConfig(appName string, buildProxyCacheCfgData buildProxyCa
 	return cfgStr, cacheResultingNames, nil
 }
 
+type limitZoneResultingNames map[string]string
+
+func buildLimitReqZoneConfig(appName string, config *file_config.Config) (string, limitZoneResultingNames, error) {
+	names := make(limitZoneResultingNames)
+	cfgStr := ""
+
+	for _, zone := range config.LimitReqZones {
+		zoneName := fmt.Sprintf("limit_req_%s_%s", appName, zone.Name)
+		names[zone.Name] = zoneName
+		line := fmt.Sprintf("limit_req_zone %s zone=%s:%s rate=%s;", zone.Key, zoneName, zone.Size, zone.Rate)
+		if cfgStr != "" {
+			cfgStr += "\n"
+		}
+		cfgStr += line
+	}
+
+	return cfgStr, names, nil
+}
+
+func buildLimitConnZoneConfig(appName string, config *file_config.Config) (string, limitZoneResultingNames, error) {
+	names := make(limitZoneResultingNames)
+	cfgStr := ""
+
+	for _, zone := range config.LimitConnZones {
+		zoneName := fmt.Sprintf("limit_conn_%s_%s", appName, zone.Name)
+		names[zone.Name] = zoneName
+		line := fmt.Sprintf("limit_conn_zone %s zone=%s:%s;", zone.Key, zoneName, zone.Size)
+		if cfgStr != "" {
+			cfgStr += "\n"
+		}
+		cfgStr += line
+	}
+
+	return cfgStr, names, nil
+}
+
 type locationConfigData struct {
-	upstreams     upstreamResultingNames
-	mapVariables  mapResultingVariables
-	proxyCaches   cacheResultingNames
-	fastcgiCaches cacheResultingNames
+	upstreams      upstreamResultingNames
+	mapVariables   mapResultingVariables
+	proxyCaches    cacheResultingNames
+	fastcgiCaches  cacheResultingNames
+	limitReqZones  limitZoneResultingNames
+	limitConnZones limitZoneResultingNames
 }
 
 type vhostToLocationConfigStringMap map[string]string
@@ -672,14 +710,16 @@ location {{ $.modifier }}{{ if $.named }}@{{ $.named }}{{ else }}{{ $.uri }}{{ e
 		}
 
 		bodyTmplData := map[string]any{
-			"map_variables":   data.mapVariables,
-			"upstreams":       data.upstreams,
-			"proxy_caches":    data.proxyCaches,
-			"fastcgi_caches":  data.fastcgiCaches,
-			"variables":       variableNames,
-			"named_locations": namedLocations,
-			"vars":            config.UserVars,
-			"sys_vars":        config.SysVars,
+			"map_variables":    data.mapVariables,
+			"upstreams":        data.upstreams,
+			"proxy_caches":     data.proxyCaches,
+			"fastcgi_caches":   data.fastcgiCaches,
+			"limit_req_zones":  data.limitReqZones,
+			"limit_conn_zones": data.limitConnZones,
+			"variables":        variableNames,
+			"named_locations":  namedLocations,
+			"vars":             config.UserVars,
+			"sys_vars":         config.SysVars,
 		}
 
 		for _, location := range vhost.Locations {
@@ -1275,6 +1315,20 @@ func main() {
 	fmt.Printf("[VARDEBUG] fastcgiCaches=%s\n", prettyJSON(fastcgiCaches))
 	fmt.Printf("[VARDEBUG] fastcgiCacheCfgStr=%s\n", fastcgiCacheCfgStr)
 
+	limitReqZoneCfgStr, limitReqZones, err := buildLimitReqZoneConfig(appName, cfg)
+	if err != nil {
+		log.Fatalln("failed to build limit_req zone config:", err)
+	}
+	fmt.Printf("[VARDEBUG] limitReqZones=%s\n", prettyJSON(limitReqZones))
+	fmt.Printf("[VARDEBUG] limitReqZoneCfgStr=%s\n", limitReqZoneCfgStr)
+
+	limitConnZoneCfgStr, limitConnZones, err := buildLimitConnZoneConfig(appName, cfg)
+	if err != nil {
+		log.Fatalln("failed to build limit_conn zone config:", err)
+	}
+	fmt.Printf("[VARDEBUG] limitConnZones=%s\n", prettyJSON(limitConnZones))
+	fmt.Printf("[VARDEBUG] limitConnZoneCfgStr=%s\n", limitConnZoneCfgStr)
+
 	mapCfgStr, mapResultingVariables, err := buildMapConfig(appName, cfg)
 	if err != nil {
 		log.Fatalln("failed to build map config:", err)
@@ -1283,10 +1337,12 @@ func main() {
 	fmt.Printf("[VARDEBUG] mapResultingVariables=%s\n", prettyJSON(mapResultingVariables))
 
 	locationConfigs, err := buildLocationConfig(appName, cfg, &locationConfigData{
-		upstreams:     upstreams,
-		proxyCaches:   proxyCaches,
-		fastcgiCaches: fastcgiCaches,
-		mapVariables:  mapResultingVariables,
+		upstreams:      upstreams,
+		proxyCaches:    proxyCaches,
+		fastcgiCaches:  fastcgiCaches,
+		limitReqZones:  limitReqZones,
+		limitConnZones: limitConnZones,
+		mapVariables:   mapResultingVariables,
 	})
 	if err != nil {
 		log.Fatalln("failed to build location config:", err)
@@ -1303,10 +1359,12 @@ func main() {
 	}
 
 	configFiles := map[string]string{
-		"upstreams.conf":      upstreamCfgStr,
-		"proxy_caches.conf":   proxyCacheCfgStr,
-		"fastcgi_caches.conf": fastcgiCacheCfgStr,
-		"maps.conf":           mapCfgStr,
+		"upstreams.conf":        upstreamCfgStr,
+		"proxy_caches.conf":     proxyCacheCfgStr,
+		"fastcgi_caches.conf":   fastcgiCacheCfgStr,
+		"limit_req_zones.conf":  limitReqZoneCfgStr,
+		"limit_conn_zones.conf": limitConnZoneCfgStr,
+		"maps.conf":             mapCfgStr,
 	}
 
 	for vhost, locationConfig := range locationConfigs {

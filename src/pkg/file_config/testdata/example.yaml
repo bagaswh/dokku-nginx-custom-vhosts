@@ -142,6 +142,17 @@ proxy_caches:
     on_disk: true
     purge_on_deploy: true
 
+limit_req_zones:
+  - name: api
+    key: $binary_remote_addr
+    size: 10m
+    rate: 10r/s
+
+limit_conn_zones:
+  - name: addr
+    key: $binary_remote_addr
+    size: 10m
+
 in_server_block: |
   ssl_certificate /etc/letsencrypt/live/api.example.com/fullchain.pem;
   ssl_certificate_key /etc/letsencrypt/live/api.example.com/privkey.pem;
@@ -151,8 +162,6 @@ in_server_block: |
   add_header X-Cache-Status $upstream_cache_status;
 
 in_http_block: |
-  limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
-  limit_conn_zone $binary_remote_addr zone=addr:10m;
 
 vhosts:
   - existing: false
@@ -169,6 +178,8 @@ vhosts:
         uri: "/api/v1/"
         body: |
           alias "{{ (index $.sys_vars.container_mounts "/var/www/biadap").Source }}";
+          limit_req zone={{ .limit_req_zones.api }} burst=20 nodelay;
+          limit_conn {{ .limit_conn_zones.addr }} 10;
           proxy_cache {{ .proxy_caches.in_mem }};
           proxy_pass http://{{ index $.upstreams "default-5001" }};
           proxy_set_header X-Real-IP $remote_addr;

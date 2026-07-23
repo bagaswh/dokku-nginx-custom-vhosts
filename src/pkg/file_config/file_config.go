@@ -180,6 +180,25 @@ type CacheConfig struct {
 	PurgeOnDeploy bool              `yaml:"purge_on_deploy" json:"purge_on_deploy"`
 }
 
+// LimitReqZoneConfig defines an nginx limit_req_zone (http context).
+// All fields are required — no silent defaults.
+// See: https://nginx.org/en/docs/http/ngx_http_limit_req_module.html#limit_req_zone
+type LimitReqZoneConfig struct {
+	Name string `yaml:"name" validate:"required" json:"name"`
+	Key  string `yaml:"key" validate:"required" json:"key"`
+	Size string `yaml:"size" validate:"required" json:"size"`
+	Rate string `yaml:"rate" validate:"required" json:"rate"`
+}
+
+// LimitConnZoneConfig defines an nginx limit_conn_zone (http context).
+// All fields are required — no silent defaults.
+// See: https://nginx.org/en/docs/http/ngx_http_limit_conn_module.html#limit_conn_zone
+type LimitConnZoneConfig struct {
+	Name string `yaml:"name" validate:"required" json:"name"`
+	Key  string `yaml:"key" validate:"required" json:"key"`
+	Size string `yaml:"size" validate:"required" json:"size"`
+}
+
 type VhostConfig struct {
 	ServerName string           `yaml:"server_name" validate:"required" json:"server_name"`
 	Locations  []LocationConfig `yaml:"locations" validate:"required,dive" json:"locations"`
@@ -202,6 +221,8 @@ type Config struct {
 	Maps                []MapConfig      `yaml:"maps" validate:"omitempty,dive" json:"maps"`
 	ProxyCaches         []CacheConfig    `yaml:"proxy_caches" validate:"omitempty,dive" json:"proxy_caches"`
 	FastcgiCaches       []CacheConfig    `yaml:"fastcgi_caches" validate:"omitempty,dive" json:"fastcgi_caches"`
+	LimitReqZones       []LimitReqZoneConfig  `yaml:"limit_req_zones" validate:"omitempty,dive" json:"limit_req_zones"`
+	LimitConnZones      []LimitConnZoneConfig `yaml:"limit_conn_zones" validate:"omitempty,dive" json:"limit_conn_zones"`
 
 	InHttpBlock string `yaml:"in_http_block" validate:"omitempty" json:"in_http_block"`
 }
