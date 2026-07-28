@@ -166,6 +166,9 @@ in_http_block: |
 vhosts:
   - existing: false
     server_name: api.example.com
+    additional_server_names:
+      - api.example.org
+      - api-alias.example.com
     locations:
       - body: |
           {{ range .vars.nginx_fe_paths }}

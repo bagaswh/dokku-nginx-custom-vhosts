@@ -5,6 +5,71 @@ import (
 	"testing"
 )
 
+func TestAdditionalServerNames_Parse(t *testing.T) {
+	t.Run("ParsesAdditionalServerNames", func(t *testing.T) {
+		y := []byte(`
+vhosts:
+  - server_name: api.example.com
+    additional_server_names:
+      - api.example.org
+      - api-alias.example.com
+    locations:
+      - modifier: ""
+        uri: "/"
+        body: |
+          return 200;
+`)
+		cfg, _, err := ReadConfigBytes(y)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.Vhosts) != 1 {
+			t.Fatalf("expected 1 vhost, got %d", len(cfg.Vhosts))
+		}
+		got := cfg.Vhosts[0].AdditionalServerNames
+		if len(got) != 2 || got[0] != "api.example.org" || got[1] != "api-alias.example.com" {
+			t.Fatalf("unexpected additional_server_names: %#v", got)
+		}
+	})
+
+	t.Run("AllowsOmittedAdditionalServerNames", func(t *testing.T) {
+		y := []byte(`
+vhosts:
+  - server_name: api.example.com
+    locations:
+      - modifier: ""
+        uri: "/"
+        body: |
+          return 200;
+`)
+		cfg, _, err := ReadConfigBytes(y)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.Vhosts[0].AdditionalServerNames) != 0 {
+			t.Fatalf("expected empty additional_server_names, got %#v", cfg.Vhosts[0].AdditionalServerNames)
+		}
+	})
+
+	t.Run("RejectsEmptyAdditionalServerName", func(t *testing.T) {
+		y := []byte(`
+vhosts:
+  - server_name: api.example.com
+    additional_server_names:
+      - ""
+    locations:
+      - modifier: ""
+        uri: "/"
+        body: |
+          return 200;
+`)
+		_, _, err := ReadConfigBytes(y)
+		if err == nil {
+			t.Fatal("expected validation error for empty additional_server_names entry")
+		}
+	})
+}
+
 func TestLimitZones_ParseAndValidate(t *testing.T) {
 	minimalVhost := `
 vhosts:
@@ -79,7 +144,6 @@ limit_conn_zones:
 		}
 	})
 }
-
 
 func TestNullableUpstreamZone_Unmarshal(t *testing.T) {
 	t.Run("AbsentZoneField", func(t *testing.T) {

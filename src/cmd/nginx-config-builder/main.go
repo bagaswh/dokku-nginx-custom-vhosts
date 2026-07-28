@@ -906,6 +906,40 @@ func updateCurrentSymlink(nginxConfigDirectory string, newReleaseDir string) err
 	return nil
 }
 
+// createAdditionalServerNameSymlinks creates vhosts/<alias> -> <server_name> symlinks
+// so additional hostnames resolve to the same vhost config directory.
+func createAdditionalServerNameSymlinks(releaseDir string, vhosts []file_config.VhostConfig) error {
+	vhostsDir := path.Join(releaseDir, "vhosts")
+	for _, vhost := range vhosts {
+		for _, alias := range vhost.AdditionalServerNames {
+			if alias == vhost.ServerName {
+				return fmt.Errorf("additional_server_names entry %q duplicates server_name for vhost %q", alias, vhost.ServerName)
+			}
+
+			linkPath := path.Join(vhostsDir, alias)
+			if info, err := os.Lstat(linkPath); err == nil {
+				if info.Mode()&os.ModeSymlink == 0 {
+					return fmt.Errorf("cannot create additional_server_names symlink %q: path exists and is not a symlink", alias)
+				}
+				if err := os.Remove(linkPath); err != nil {
+					return fmt.Errorf("failed to remove existing symlink %s: %w", linkPath, err)
+				}
+			} else if !os.IsNotExist(err) {
+				return fmt.Errorf("failed to stat %s: %w", linkPath, err)
+			}
+
+			if err := os.MkdirAll(vhostsDir, 0755); err != nil {
+				return fmt.Errorf("failed to create vhosts directory %s: %w", vhostsDir, err)
+			}
+
+			if err := os.Symlink(vhost.ServerName, linkPath); err != nil {
+				return fmt.Errorf("failed to create symlink %s -> %s: %w", alias, vhost.ServerName, err)
+			}
+		}
+	}
+	return nil
+}
+
 func testNginxConfig(nginxTestCommand ...string) error {
 	cmd := exec.Command(nginxTestCommand[0], nginxTestCommand[1:]...)
 	output, err := cmd.CombinedOutput()
@@ -1376,6 +1410,10 @@ func main() {
 		if err := copyConfigToRelease(content, latestReleaseDir, filename, configFileMode, chown{uid: configFileOwnerUid, gid: configFileOwnerGid}); err != nil {
 			log.Fatalln("failed to copy config file:", err)
 		}
+	}
+
+	if err := createAdditionalServerNameSymlinks(latestReleaseDir, cfg.Vhosts); err != nil {
+		log.Fatalln("failed to create additional server name symlinks:", err)
 	}
 
 	if err := updateCurrentSymlink(nginxConfigDirectory, latestReleaseDir); err != nil {

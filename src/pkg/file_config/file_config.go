@@ -32,10 +32,10 @@ type UpstreamServerOverride struct {
 }
 
 type UpstreamOverride struct {
-	SelectProcessType string                 `yaml:"select_process_type" validate:"required" json:"select_process_type"`
-	SelectPort        string                 `yaml:"select_port" validate:"required" json:"select_port"`
-	Directives        []string               `yaml:"directives" validate:"omitempty" json:"directives"`
-	Zone              NullableUpstreamZone   `yaml:"zone" validate:"omitempty" json:"zone"`
+	SelectProcessType string                   `yaml:"select_process_type" validate:"required" json:"select_process_type"`
+	SelectPort        string                   `yaml:"select_port" validate:"required" json:"select_port"`
+	Directives        []string                 `yaml:"directives" validate:"omitempty" json:"directives"`
+	Zone              NullableUpstreamZone     `yaml:"zone" validate:"omitempty" json:"zone"`
 	ServerOverrides   []UpstreamServerOverride `yaml:"server_overrides" validate:"omitempty,dive" json:"server_overrides"`
 }
 
@@ -200,9 +200,10 @@ type LimitConnZoneConfig struct {
 }
 
 type VhostConfig struct {
-	ServerName string           `yaml:"server_name" validate:"required" json:"server_name"`
-	Locations  []LocationConfig `yaml:"locations" validate:"required,dive" json:"locations"`
-	Variables  []VariableConfig `yaml:"variables" validate:"omitempty,dive" json:"variables"`
+	ServerName            string           `yaml:"server_name" validate:"required" json:"server_name"`
+	AdditionalServerNames []string         `yaml:"additional_server_names" validate:"omitempty,dive,required" json:"additional_server_names"`
+	Locations             []LocationConfig `yaml:"locations" validate:"required,dive" json:"locations"`
+	Variables             []VariableConfig `yaml:"variables" validate:"omitempty,dive" json:"variables"`
 
 	InServerBlock string `yaml:"in_server_block" validate:"omitempty" json:"in_server_block"`
 }
@@ -215,12 +216,12 @@ type Config struct {
 	SysVars  ConfigVars
 	UserVars ConfigVars `yaml:"user_vars" validate:"omitempty" json:"vars"`
 
-	UpstreamAddressmode string           `yaml:"upstream_address_mode" validate:"oneof=ip dns" json:"upstream_address_mode"`
-	Upstreams           []UpstreamConfig `yaml:"upstreams" validate:"omitempty,dive" json:"upstreams"`
-	UpstreamOverrides   []UpstreamOverride `yaml:"upstream_overrides" validate:"omitempty,dive" json:"upstream_overrides"`
-	Maps                []MapConfig      `yaml:"maps" validate:"omitempty,dive" json:"maps"`
-	ProxyCaches         []CacheConfig    `yaml:"proxy_caches" validate:"omitempty,dive" json:"proxy_caches"`
-	FastcgiCaches       []CacheConfig    `yaml:"fastcgi_caches" validate:"omitempty,dive" json:"fastcgi_caches"`
+	UpstreamAddressmode string                `yaml:"upstream_address_mode" validate:"oneof=ip dns" json:"upstream_address_mode"`
+	Upstreams           []UpstreamConfig      `yaml:"upstreams" validate:"omitempty,dive" json:"upstreams"`
+	UpstreamOverrides   []UpstreamOverride    `yaml:"upstream_overrides" validate:"omitempty,dive" json:"upstream_overrides"`
+	Maps                []MapConfig           `yaml:"maps" validate:"omitempty,dive" json:"maps"`
+	ProxyCaches         []CacheConfig         `yaml:"proxy_caches" validate:"omitempty,dive" json:"proxy_caches"`
+	FastcgiCaches       []CacheConfig         `yaml:"fastcgi_caches" validate:"omitempty,dive" json:"fastcgi_caches"`
 	LimitReqZones       []LimitReqZoneConfig  `yaml:"limit_req_zones" validate:"omitempty,dive" json:"limit_req_zones"`
 	LimitConnZones      []LimitConnZoneConfig `yaml:"limit_conn_zones" validate:"omitempty,dive" json:"limit_conn_zones"`
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"dokku-nginx-custom/src/pkg/file_config"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -363,6 +364,111 @@ func TestDeploymentFunctions(t *testing.T) {
 		expected := "release-20011225.1"
 		if target != expected {
 			t.Errorf("Expected symlink to point to %s, got: %s", expected, target)
+		}
+	})
+}
+
+func TestCreateAdditionalServerNameSymlinks(t *testing.T) {
+	t.Run("CreatesRelativeSymlinksToMainServerName", func(t *testing.T) {
+		tempDir := t.TempDir()
+		releaseDir := filepath.Join(tempDir, "release-20011225.1")
+		mainVhostDir := filepath.Join(releaseDir, "vhosts", "api.example.com")
+		if err := os.MkdirAll(mainVhostDir, 0755); err != nil {
+			t.Fatalf("Failed to create main vhost dir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(mainVhostDir, "vhost.conf"), []byte("ok"), 0644); err != nil {
+			t.Fatalf("Failed to write vhost.conf: %v", err)
+		}
+
+		vhosts := []file_config.VhostConfig{
+			{
+				ServerName:            "api.example.com",
+				AdditionalServerNames: []string{"api.example.org", "api-alias.example.com"},
+			},
+		}
+
+		if err := createAdditionalServerNameSymlinks(releaseDir, vhosts); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		for _, alias := range []string{"api.example.org", "api-alias.example.com"} {
+			linkPath := filepath.Join(releaseDir, "vhosts", alias)
+			target, err := os.Readlink(linkPath)
+			if err != nil {
+				t.Fatalf("expected symlink at %s: %v", linkPath, err)
+			}
+			if target != "api.example.com" {
+				t.Fatalf("expected symlink %s -> api.example.com, got %s", alias, target)
+			}
+			// Follow symlink and confirm main config is reachable
+			resolved := filepath.Join(releaseDir, "vhosts", target, "vhost.conf")
+			if _, err := os.Stat(resolved); err != nil {
+				t.Fatalf("expected resolved vhost.conf via %s: %v", alias, err)
+			}
+		}
+	})
+
+	t.Run("ReplacesExistingSymlink", func(t *testing.T) {
+		tempDir := t.TempDir()
+		releaseDir := filepath.Join(tempDir, "release-20011225.1")
+		mainVhostDir := filepath.Join(releaseDir, "vhosts", "api.example.com")
+		if err := os.MkdirAll(mainVhostDir, 0755); err != nil {
+			t.Fatalf("Failed to create main vhost dir: %v", err)
+		}
+		oldLink := filepath.Join(releaseDir, "vhosts", "api.example.org")
+		if err := os.Symlink("old.example.com", oldLink); err != nil {
+			t.Fatalf("Failed to create old symlink: %v", err)
+		}
+
+		vhosts := []file_config.VhostConfig{
+			{
+				ServerName:            "api.example.com",
+				AdditionalServerNames: []string{"api.example.org"},
+			},
+		}
+		if err := createAdditionalServerNameSymlinks(releaseDir, vhosts); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		target, err := os.Readlink(oldLink)
+		if err != nil {
+			t.Fatalf("expected symlink: %v", err)
+		}
+		if target != "api.example.com" {
+			t.Fatalf("expected updated target api.example.com, got %s", target)
+		}
+	})
+
+	t.Run("ErrorsWhenAliasPathIsADirectory", func(t *testing.T) {
+		tempDir := t.TempDir()
+		releaseDir := filepath.Join(tempDir, "release-20011225.1")
+		mainVhostDir := filepath.Join(releaseDir, "vhosts", "api.example.com")
+		aliasDir := filepath.Join(releaseDir, "vhosts", "api.example.org")
+		if err := os.MkdirAll(mainVhostDir, 0755); err != nil {
+			t.Fatalf("Failed to create main vhost dir: %v", err)
+		}
+		if err := os.MkdirAll(aliasDir, 0755); err != nil {
+			t.Fatalf("Failed to create alias dir: %v", err)
+		}
+
+		vhosts := []file_config.VhostConfig{
+			{
+				ServerName:            "api.example.com",
+				AdditionalServerNames: []string{"api.example.org"},
+			},
+		}
+		err := createAdditionalServerNameSymlinks(releaseDir, vhosts)
+		if err == nil {
+			t.Fatal("expected error when alias path is a real directory")
+		}
+	})
+
+	t.Run("NoopWhenNoAdditionalNames", func(t *testing.T) {
+		tempDir := t.TempDir()
+		releaseDir := filepath.Join(tempDir, "release-20011225.1")
+		if err := createAdditionalServerNameSymlinks(releaseDir, []file_config.VhostConfig{
+			{ServerName: "api.example.com"},
+		}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 }
