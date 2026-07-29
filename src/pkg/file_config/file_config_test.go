@@ -227,3 +227,54 @@ upstreams:
 		}
 	})
 }
+
+func TestAutoRollbackAndFailedRetain_Parse(t *testing.T) {
+	minimalVhost := `
+vhosts:
+  - server_name: example.com
+    locations:
+      - modifier: ""
+        uri: "/"
+        body: |
+          return 200;
+`
+
+	t.Run("ParsesAutoRollbackAndFailedRetain", func(t *testing.T) {
+		y := []byte(minimalVhost + `
+auto_rollback: false
+failed_config_retain_count: 3
+`)
+		cfg, _, err := ReadConfigBytes(y)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.AutoRollback == nil || *cfg.AutoRollback {
+			t.Fatalf("expected auto_rollback=false, got %#v", cfg.AutoRollback)
+		}
+		if cfg.FailedConfigRetainCount == nil || *cfg.FailedConfigRetainCount != 3 {
+			t.Fatalf("expected failed_config_retain_count=3, got %#v", cfg.FailedConfigRetainCount)
+		}
+	})
+
+	t.Run("OmittedFieldsAreNil", func(t *testing.T) {
+		cfg, _, err := ReadConfigBytes([]byte(minimalVhost))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.AutoRollback != nil {
+			t.Fatalf("expected AutoRollback nil, got %#v", cfg.AutoRollback)
+		}
+		if cfg.FailedConfigRetainCount != nil {
+			t.Fatalf("expected FailedConfigRetainCount nil, got %#v", cfg.FailedConfigRetainCount)
+		}
+	})
+
+	t.Run("RejectsNegativeFailedRetain", func(t *testing.T) {
+		y := []byte(minimalVhost + `
+failed_config_retain_count: -1
+`)
+		if _, _, err := ReadConfigBytes(y); err == nil {
+			t.Fatal("expected validation error for negative failed_config_retain_count")
+		}
+	})
+}

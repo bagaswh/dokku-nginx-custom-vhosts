@@ -164,8 +164,7 @@ in_server_block: |
 in_http_block: |
 
 vhosts:
-  - existing: false
-    server_name: api.example.com
+  - server_name: api.example.com
     additional_server_names:
       - api.example.org
       - api-alias.example.com
@@ -213,8 +212,7 @@ vhosts:
           grpc_pass grpc://{{ .upstreams.grpc_backend }};
           grpc_set_header X-Real-IP $remote_addr;
 
-  - existing: true
-    server_name: legacy-api.example.com
+  - server_name: legacy-api.example.com
 
     locations:
       - modifier: ""
@@ -223,8 +221,7 @@ vhosts:
           proxy_pass http://{{ .upstreams.default }};
           proxy_set_header Host $http_host;
 
-  - existing: false
-    server_name: www.example.com
+  - server_name: www.example.com
 
     locations:
       - modifier: ""
@@ -250,8 +247,7 @@ vhosts:
       - name: cache_max_age
         value: "31536000"
 
-  - existing: false
-    server_name: php.example.com
+  - server_name: php.example.com
 
     locations:
       - modifier: "~"

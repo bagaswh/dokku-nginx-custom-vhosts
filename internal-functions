@@ -228,6 +228,51 @@ nginx-config-get-upstream-address-mode() {
   echo "$mode"
 }
 
+nginx-config-get-old-config-retain-count() {
+  declare desc="retrieves old config retain count from yaml config or global property"
+  declare APP="$1"
+  count="$(nginx_yaml_get_config "$APP" "old_config_retain_count")"
+  if [[ -z "$count" ]] || [[ "$count" == "null" ]]; then
+    count="$(fn-get-property --app "$APP" --global "old-config-retain-count")"
+    if [[ -z "$count" ]] || [[ "$count" == "null" ]]; then
+      count="10"
+    fi
+  fi
+  if ! [[ "$count" =~ ^[0-9]+$ ]]; then
+    dokku_log_fail "Invalid old-config-retain-count value '$count'. Must be a non-negative integer."
+  fi
+  echo "$count"
+}
+
+nginx-config-get-auto-rollback() {
+  declare desc="retrieves auto-rollback from yaml config or global property"
+  declare APP="$1"
+  val="$(nginx_yaml_get_config "$APP" "auto_rollback")"
+  if [[ -z "$val" ]] || [[ "$val" == "null" ]]; then
+    val="$(fn-get-property --app "$APP" --global "auto-rollback")"
+    if [[ -z "$val" ]] || [[ "$val" == "null" ]]; then
+      val="true"
+    fi
+  fi
+  echo "$val"
+}
+
+nginx-config-get-failed-config-retain-count() {
+  declare desc="retrieves failed config retain count from yaml config or global property"
+  declare APP="$1"
+  count="$(nginx_yaml_get_config "$APP" "failed_config_retain_count")"
+  if [[ -z "$count" ]] || [[ "$count" == "null" ]]; then
+    count="$(fn-get-property --app "$APP" --global "failed-config-retain-count")"
+    if [[ -z "$count" ]] || [[ "$count" == "null" ]]; then
+      count="10"
+    fi
+  fi
+  if ! [[ "$count" =~ ^[0-9]+$ ]]; then
+    dokku_log_fail "Invalid failed-config-retain-count value '$count'. Must be a non-negative integer."
+  fi
+  echo "$count"
+}
+
 fn-get-data-dir() {
   declare desc="get the data directory"
   declare APP="$1"

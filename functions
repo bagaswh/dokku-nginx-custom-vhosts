@@ -231,7 +231,10 @@ nginx_build_config() {
     -nginx-test-command "$nginx_test_command" \
     -config-file-owner-uid "$(fn-nginx-custom-config-file-owner-uid "$APP")" \
     -config-file-owner-gid "$(fn-nginx-custom-config-file-owner-gid "$APP")" \
-    -config-file-mode "$(fn-nginx-custom-config-file-mode "$APP")"
+    -config-file-mode "$(fn-nginx-custom-config-file-mode "$APP")" \
+    -old-config-retain-count "$(fn-get-property --app "$APP" --global "old-config-retain-count")" \
+    -auto-rollback "$(fn-get-property --app "$APP" --global "auto-rollback")" \
+    -failed-config-retain-count "$(fn-get-property --app "$APP" --global "failed-config-retain-count")"
 }
 
 nginx_yaml_get_config() {

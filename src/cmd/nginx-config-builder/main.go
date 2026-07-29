@@ -769,64 +769,264 @@ location {{ $.modifier }}{{ if $.named }}@{{ $.named }}{{ else }}{{ $.uri }}{{ e
 
 var nginxWorkingDirectory string
 
-func getCurrentConfigVersionDirectory(nginxConfigDirectory string) (string, error) {
+var releaseDirPattern = regexp.MustCompile(`^release-(\d+)\.(\d+)$`)
+
+type releaseDir struct {
+	path string
+	date int
+	seq  int
+}
+
+func listReleaseDirectories(nginxConfigDirectory string) ([]releaseDir, error) {
 	files, err := filepath.Glob(path.Join(nginxConfigDirectory, "release-*"))
 	if err != nil {
-		return "", fmt.Errorf("failed to read nginx config directory: %w", err)
+		return nil, fmt.Errorf("failed to read nginx config directory: %w", err)
 	}
 
-	yyyymmdd := time.Now().Format("20060102")
-
-	sequence := 1
+	out := make([]releaseDir, 0)
 	for _, file := range files {
-		if strings.HasPrefix(file, fmt.Sprintf("%s/release-%s.", nginxConfigDirectory, yyyymmdd)) {
-			sequence++
-		}
-	}
-
-	if len(files) == 0 {
-		return fmt.Sprintf("%s/release-%s.1", nginxConfigDirectory, yyyymmdd), nil
-	}
-
-	var latestDir string
-	var latestDate int
-	var latestSequence int
-
-	releasePattern := regexp.MustCompile(`^release-(\d+)\.(\d+)$`)
-
-	for _, file := range files {
-		dirName := filepath.Base(file)
-
-		if info, err := os.Stat(file); err != nil || !info.IsDir() {
+		info, err := os.Lstat(file)
+		if err != nil || !info.IsDir() {
 			continue
 		}
-
-		matches := releasePattern.FindStringSubmatch(dirName)
+		// Skip symlinks that happen to match the glob.
+		if info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		matches := releaseDirPattern.FindStringSubmatch(filepath.Base(file))
 		if len(matches) != 3 {
 			continue
 		}
-
 		date, err := strconv.Atoi(matches[1])
 		if err != nil {
 			continue
 		}
-		sequence, err := strconv.Atoi(matches[2])
+		seq, err := strconv.Atoi(matches[2])
 		if err != nil {
 			continue
 		}
+		out = append(out, releaseDir{path: file, date: date, seq: seq})
+	}
 
-		if latestDir == "" || date > latestDate || (date == latestDate && sequence > latestSequence) {
-			latestDir = file
-			latestDate = date
-			latestSequence = sequence
+	slices.SortFunc(out, func(a, b releaseDir) int {
+		if a.date != b.date {
+			return b.date - a.date // newest date first
+		}
+		return b.seq - a.seq
+	})
+	return out, nil
+}
+
+// allocateNextReleaseDirectory returns a path for a new release directory that
+// does not yet exist. It never reuses an existing release path.
+func allocateNextReleaseDirectory(nginxConfigDirectory string) (string, error) {
+	yyyymmdd := time.Now().Format("20060102")
+	today, err := strconv.Atoi(yyyymmdd)
+	if err != nil {
+		return "", fmt.Errorf("invalid date format: %w", err)
+	}
+
+	releases, err := listReleaseDirectories(nginxConfigDirectory)
+	if err != nil {
+		return "", err
+	}
+
+	maxSeqToday := 0
+	for _, r := range releases {
+		if r.date == today && r.seq > maxSeqToday {
+			maxSeqToday = r.seq
 		}
 	}
 
-	if latestDir == "" {
-		return "", fmt.Errorf("no valid release directories found")
+	return path.Join(nginxConfigDirectory, fmt.Sprintf("release-%s.%d", yyyymmdd, maxSeqToday+1)), nil
+}
+
+func resolveOldConfigRetainCount(cfg *file_config.Config, propertyValue string) (int, error) {
+	if cfg != nil && cfg.OldConfigRetainCount != nil {
+		if *cfg.OldConfigRetainCount < 0 {
+			return 0, fmt.Errorf("old_config_retain_count must be >= 0, got %d", *cfg.OldConfigRetainCount)
+		}
+		return *cfg.OldConfigRetainCount, nil
+	}
+	propertyValue = strings.TrimSpace(propertyValue)
+	if propertyValue == "" {
+		return 10, nil
+	}
+	n, err := strconv.Atoi(propertyValue)
+	if err != nil {
+		return 0, fmt.Errorf("invalid old-config-retain-count %q: %w", propertyValue, err)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("old-config-retain-count must be >= 0, got %d", n)
+	}
+	return n, nil
+}
+
+func resolveFailedConfigRetainCount(cfg *file_config.Config, propertyValue string) (int, error) {
+	if cfg != nil && cfg.FailedConfigRetainCount != nil {
+		if *cfg.FailedConfigRetainCount < 0 {
+			return 0, fmt.Errorf("failed_config_retain_count must be >= 0, got %d", *cfg.FailedConfigRetainCount)
+		}
+		return *cfg.FailedConfigRetainCount, nil
+	}
+	propertyValue = strings.TrimSpace(propertyValue)
+	if propertyValue == "" {
+		return 10, nil
+	}
+	n, err := strconv.Atoi(propertyValue)
+	if err != nil {
+		return 0, fmt.Errorf("invalid failed-config-retain-count %q: %w", propertyValue, err)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("failed-config-retain-count must be >= 0, got %d", n)
+	}
+	return n, nil
+}
+
+func resolveAutoRollback(cfg *file_config.Config, propertyValue string) (bool, error) {
+	if cfg != nil && cfg.AutoRollback != nil {
+		return *cfg.AutoRollback, nil
+	}
+	propertyValue = strings.TrimSpace(propertyValue)
+	if propertyValue == "" {
+		return true, nil
+	}
+	switch strings.ToLower(propertyValue) {
+	case "true", "1", "yes":
+		return true, nil
+	case "false", "0", "no":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid auto-rollback %q (want true or false)", propertyValue)
+	}
+}
+
+// pruneOldReleases deletes non-current release directories beyond retainCount,
+// keeping the newest retainCount non-current releases.
+func pruneOldReleases(nginxConfigDirectory string, currentReleaseDir string, retainCount int) error {
+	if retainCount < 0 {
+		return fmt.Errorf("retain count must be >= 0, got %d", retainCount)
 	}
 
-	return latestDir, nil
+	currentReleaseDir = filepath.Clean(currentReleaseDir)
+	releases, err := listReleaseDirectories(nginxConfigDirectory)
+	if err != nil {
+		return err
+	}
+
+	nonCurrent := make([]releaseDir, 0, len(releases))
+	for _, r := range releases {
+		if filepath.Clean(r.path) == currentReleaseDir {
+			continue
+		}
+		nonCurrent = append(nonCurrent, r)
+	}
+
+	if len(nonCurrent) <= retainCount {
+		return nil
+	}
+
+	for _, r := range nonCurrent[retainCount:] {
+		log.Printf("[nginx-config-builder] pruning old release %s", r.path)
+		if err := os.RemoveAll(r.path); err != nil {
+			return fmt.Errorf("failed to prune release %s: %w", r.path, err)
+		}
+	}
+	return nil
+}
+
+func removeCurrentSymlink(nginxConfigDirectory string) error {
+	currentSymlink := path.Join(nginxConfigDirectory, "current")
+	if _, err := os.Lstat(currentSymlink); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("failed to stat current symlink: %w", err)
+	}
+	if err := os.Remove(currentSymlink); err != nil {
+		return fmt.Errorf("failed to remove current symlink: %w", err)
+	}
+	return nil
+}
+
+// quarantineFailedRelease moves a failed release directory under conf.d/failed/.
+func quarantineFailedRelease(nginxConfigDirectory string, releaseDir string) (string, error) {
+	failedRoot := path.Join(nginxConfigDirectory, "failed")
+	if err := os.MkdirAll(failedRoot, 0755); err != nil {
+		return "", fmt.Errorf("failed to create failed/ directory: %w", err)
+	}
+	dest := path.Join(failedRoot, filepath.Base(releaseDir))
+	if _, err := os.Lstat(dest); err == nil {
+		return "", fmt.Errorf("quarantine destination already exists: %s", dest)
+	} else if err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("failed to stat quarantine destination %s: %w", dest, err)
+	}
+	if err := os.Rename(releaseDir, dest); err != nil {
+		return "", fmt.Errorf("failed to move %s to %s: %w", releaseDir, dest, err)
+	}
+	return dest, nil
+}
+
+// pruneFailedReleases keeps the newest retainCount directories under conf.d/failed/.
+func pruneFailedReleases(nginxConfigDirectory string, retainCount int) error {
+	if retainCount < 0 {
+		return fmt.Errorf("retain count must be >= 0, got %d", retainCount)
+	}
+	failedRoot := path.Join(nginxConfigDirectory, "failed")
+	if _, err := os.Stat(failedRoot); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("failed to stat failed/ directory: %w", err)
+	}
+
+	releases, err := listReleaseDirectories(failedRoot)
+	if err != nil {
+		return err
+	}
+	if len(releases) <= retainCount {
+		return nil
+	}
+	for _, r := range releases[retainCount:] {
+		log.Printf("[nginx-config-builder] pruning failed release %s", r.path)
+		if err := os.RemoveAll(r.path); err != nil {
+			return fmt.Errorf("failed to prune failed release %s: %w", r.path, err)
+		}
+	}
+	return nil
+}
+
+// handleNginxTestFailure performs auto-rollback / quarantine per spec, or leaves
+// the broken release in place when auto-rollback is disabled. Always returns testErr
+// (possibly wrapped with context) so the caller can exit non-zero.
+func handleNginxTestFailure(nginxConfigDirectory, newReleaseDir, previousGood string, autoRollback bool, failedRetainCount int, testErr error) error {
+	if !autoRollback {
+		log.Printf("[nginx-config-builder] auto-rollback disabled; leaving current -> %s", newReleaseDir)
+		return testErr
+	}
+
+	if previousGood != "" {
+		log.Printf("[nginx-config-builder] auto-rollback: restoring current -> %s", previousGood)
+		if rbErr := updateCurrentSymlink(nginxConfigDirectory, previousGood); rbErr != nil {
+			log.Printf("[nginx-config-builder] auto-rollback restore failed: %v", rbErr)
+		}
+	} else {
+		log.Printf("[nginx-config-builder] auto-rollback: no previous good release; removing current symlink")
+		if rmErr := removeCurrentSymlink(nginxConfigDirectory); rmErr != nil {
+			log.Printf("[nginx-config-builder] failed to remove current symlink: %v", rmErr)
+		}
+	}
+
+	dest, qErr := quarantineFailedRelease(nginxConfigDirectory, newReleaseDir)
+	if qErr != nil {
+		log.Printf("[nginx-config-builder] quarantine failed: %v", qErr)
+	} else {
+		log.Printf("[nginx-config-builder] quarantined failed release at %s", dest)
+	}
+
+	if pErr := pruneFailedReleases(nginxConfigDirectory, failedRetainCount); pErr != nil {
+		log.Printf("[nginx-config-builder] failed/ prune error: %v", pErr)
+	}
+
+	return testErr
 }
 
 func getPreviousVersionDirectory(nginxConfigDirectory string) (string, error) {
@@ -906,38 +1106,41 @@ func updateCurrentSymlink(nginxConfigDirectory string, newReleaseDir string) err
 	return nil
 }
 
-// createAdditionalServerNameSymlinks creates vhosts/<alias> -> <server_name> symlinks
-// so additional hostnames resolve to the same vhost config directory.
-func createAdditionalServerNameSymlinks(releaseDir string, vhosts []file_config.VhostConfig) error {
-	vhostsDir := path.Join(releaseDir, "vhosts")
+// expandLocationConfigsWithAliases copies each vhost's rendered location config
+// under every additional_server_names hostname so Host-keyed lookups find a real
+// directory (not a symlink).
+func expandLocationConfigsWithAliases(locationConfigs vhostToLocationConfigStringMap, vhosts []file_config.VhostConfig) (vhostToLocationConfigStringMap, error) {
+	claimedBy := make(map[string]string, len(locationConfigs))
 	for _, vhost := range vhosts {
+		if prev, ok := claimedBy[vhost.ServerName]; ok {
+			return nil, fmt.Errorf("server_name %q collides with hostname already claimed by vhost %q", vhost.ServerName, prev)
+		}
+		claimedBy[vhost.ServerName] = vhost.ServerName
+	}
+
+	out := make(vhostToLocationConfigStringMap, len(locationConfigs))
+	for host, body := range locationConfigs {
+		out[host] = body
+	}
+
+	for _, vhost := range vhosts {
+		body, ok := locationConfigs[vhost.ServerName]
+		if !ok {
+			return nil, fmt.Errorf("missing location config for server_name %q", vhost.ServerName)
+		}
 		for _, alias := range vhost.AdditionalServerNames {
 			if alias == vhost.ServerName {
-				return fmt.Errorf("additional_server_names entry %q duplicates server_name for vhost %q", alias, vhost.ServerName)
+				return nil, fmt.Errorf("additional_server_names entry %q duplicates server_name for vhost %q", alias, vhost.ServerName)
 			}
-
-			linkPath := path.Join(vhostsDir, alias)
-			if info, err := os.Lstat(linkPath); err == nil {
-				if info.Mode()&os.ModeSymlink == 0 {
-					return fmt.Errorf("cannot create additional_server_names symlink %q: path exists and is not a symlink", alias)
-				}
-				if err := os.Remove(linkPath); err != nil {
-					return fmt.Errorf("failed to remove existing symlink %s: %w", linkPath, err)
-				}
-			} else if !os.IsNotExist(err) {
-				return fmt.Errorf("failed to stat %s: %w", linkPath, err)
+			if prev, ok := claimedBy[alias]; ok {
+				return nil, fmt.Errorf("additional_server_names entry %q for vhost %q collides with hostname already claimed by vhost %q", alias, vhost.ServerName, prev)
 			}
-
-			if err := os.MkdirAll(vhostsDir, 0755); err != nil {
-				return fmt.Errorf("failed to create vhosts directory %s: %w", vhostsDir, err)
-			}
-
-			if err := os.Symlink(vhost.ServerName, linkPath); err != nil {
-				return fmt.Errorf("failed to create symlink %s -> %s: %w", alias, vhost.ServerName, err)
-			}
+			claimedBy[alias] = vhost.ServerName
+			out[alias] = body
 		}
 	}
-	return nil
+
+	return out, nil
 }
 
 func testNginxConfig(nginxTestCommand ...string) error {
@@ -1043,6 +1246,15 @@ func main() {
 
 	var umaskStr string
 	flag.StringVar(&umaskStr, "umask", "0022", "umask (e.g. 0022)")
+
+	var oldConfigRetainCountProperty string
+	flag.StringVar(&oldConfigRetainCountProperty, "old-config-retain-count", "", "global property value for old-config-retain-count (yaml overrides)")
+
+	var autoRollbackProperty string
+	flag.StringVar(&autoRollbackProperty, "auto-rollback", "", "global property value for auto-rollback (yaml overrides)")
+
+	var failedConfigRetainCountProperty string
+	flag.StringVar(&failedConfigRetainCountProperty, "failed-config-retain-count", "", "global property value for failed-config-retain-count (yaml overrides)")
 
 	flag.Parse()
 
@@ -1382,15 +1594,39 @@ func main() {
 		log.Fatalln("failed to build location config:", err)
 	}
 
-	latestReleaseDir, err := getCurrentConfigVersionDirectory(nginxConfigDirectory)
+	locationConfigs, err = expandLocationConfigsWithAliases(locationConfigs, cfg.Vhosts)
 	if err != nil {
-		log.Fatalln("failed to get latest release directory:", err)
+		log.Fatalln("failed to expand additional server names:", err)
 	}
 
-	_, err = getPreviousVersionDirectory(nginxConfigDirectory)
+	retainCount, err := resolveOldConfigRetainCount(cfg, oldConfigRetainCountProperty)
 	if err != nil {
-		log.Fatalln("failed to get previous version directory:", err)
+		log.Fatalln("failed to resolve old-config-retain-count:", err)
 	}
+	log.Printf("[nginx-config-builder] old-config-retain-count=%d", retainCount)
+
+	autoRollback, err := resolveAutoRollback(cfg, autoRollbackProperty)
+	if err != nil {
+		log.Fatalln("failed to resolve auto-rollback:", err)
+	}
+	log.Printf("[nginx-config-builder] auto-rollback=%v", autoRollback)
+
+	failedRetainCount, err := resolveFailedConfigRetainCount(cfg, failedConfigRetainCountProperty)
+	if err != nil {
+		log.Fatalln("failed to resolve failed-config-retain-count:", err)
+	}
+	log.Printf("[nginx-config-builder] failed-config-retain-count=%d", failedRetainCount)
+
+	previousGood, err := getPreviousVersionDirectory(nginxConfigDirectory)
+	if err != nil {
+		log.Fatalln("failed to resolve previous release directory:", err)
+	}
+
+	newReleaseDir, err := allocateNextReleaseDirectory(nginxConfigDirectory)
+	if err != nil {
+		log.Fatalln("failed to allocate next release directory:", err)
+	}
+	log.Printf("[nginx-config-builder] writing new release %s", newReleaseDir)
 
 	configFiles := map[string]string{
 		"upstreams.conf":        upstreamCfgStr,
@@ -1407,24 +1643,29 @@ func main() {
 	}
 
 	for filename, content := range configFiles {
-		if err := copyConfigToRelease(content, latestReleaseDir, filename, configFileMode, chown{uid: configFileOwnerUid, gid: configFileOwnerGid}); err != nil {
+		if err := copyConfigToRelease(content, newReleaseDir, filename, configFileMode, chown{uid: configFileOwnerUid, gid: configFileOwnerGid}); err != nil {
 			log.Fatalln("failed to copy config file:", err)
 		}
 	}
 
-	if err := createAdditionalServerNameSymlinks(latestReleaseDir, cfg.Vhosts); err != nil {
-		log.Fatalln("failed to create additional server name symlinks:", err)
-	}
-
-	if err := updateCurrentSymlink(nginxConfigDirectory, latestReleaseDir); err != nil {
+	if err := updateCurrentSymlink(nginxConfigDirectory, newReleaseDir); err != nil {
 		log.Fatalln("failed to update current symlink:", err)
 	}
 
 	if !withoutNginxTest {
 		log.Printf("performing nginx test with commands: %#v\n", nginxTestCommandSplit)
 		if err := testNginxConfig(nginxTestCommandSplit...); err != nil {
+			_ = handleNginxTestFailure(nginxConfigDirectory, newReleaseDir, previousGood, autoRollback, failedRetainCount, err)
 			log.Fatalf("nginx config test failed: %v\n", err)
 		}
 	}
+
+	if err := pruneOldReleases(nginxConfigDirectory, newReleaseDir, retainCount); err != nil {
+		log.Fatalln("failed to prune old releases:", err)
+	}
+	if err := pruneFailedReleases(nginxConfigDirectory, failedRetainCount); err != nil {
+		log.Fatalln("failed to prune failed releases:", err)
+	}
+
 	log.Println("nginx configuration deployed successfully")
 }

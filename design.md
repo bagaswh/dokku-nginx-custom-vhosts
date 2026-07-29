@@ -6,8 +6,7 @@ The config might look like this:
 
 ```
 vhosts:
-  - existing: false
-    server_name: app1.api.botika.online
+  - server_name: app1.api.botika.online
     upstreams:
       - select: default
       - name: websocket-proxy
@@ -55,11 +54,6 @@ vhosts:
 
     in_server_block: ""
     in_http_block: ""
-
-  - existing: true
-    server_name: api.botika.online
-    upstreams: []
-    locations: []
 ```
 
 `upstreams` config can either be a selector to the managed upstream in order to apply additional configuration to it, or a list of upstreams to create.

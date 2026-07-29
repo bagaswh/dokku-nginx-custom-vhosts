@@ -216,14 +216,20 @@ type Config struct {
 	SysVars  ConfigVars
 	UserVars ConfigVars `yaml:"user_vars" validate:"omitempty" json:"vars"`
 
-	UpstreamAddressmode string                `yaml:"upstream_address_mode" validate:"oneof=ip dns" json:"upstream_address_mode"`
-	Upstreams           []UpstreamConfig      `yaml:"upstreams" validate:"omitempty,dive" json:"upstreams"`
-	UpstreamOverrides   []UpstreamOverride    `yaml:"upstream_overrides" validate:"omitempty,dive" json:"upstream_overrides"`
-	Maps                []MapConfig           `yaml:"maps" validate:"omitempty,dive" json:"maps"`
-	ProxyCaches         []CacheConfig         `yaml:"proxy_caches" validate:"omitempty,dive" json:"proxy_caches"`
-	FastcgiCaches       []CacheConfig         `yaml:"fastcgi_caches" validate:"omitempty,dive" json:"fastcgi_caches"`
-	LimitReqZones       []LimitReqZoneConfig  `yaml:"limit_req_zones" validate:"omitempty,dive" json:"limit_req_zones"`
-	LimitConnZones      []LimitConnZoneConfig `yaml:"limit_conn_zones" validate:"omitempty,dive" json:"limit_conn_zones"`
+	UpstreamAddressmode string `yaml:"upstream_address_mode" validate:"oneof=ip dns" json:"upstream_address_mode"`
+	// OldConfigRetainCount is how many non-current release dirs to keep. Nil = unset (caller default).
+	OldConfigRetainCount *int `yaml:"old_config_retain_count" validate:"omitempty,min=0" json:"old_config_retain_count"`
+	// AutoRollback enables restore/quarantine on nginx -t failure. Nil = unset (default true).
+	AutoRollback *bool `yaml:"auto_rollback" validate:"omitempty" json:"auto_rollback"`
+	// FailedConfigRetainCount is how many quarantined failed releases to keep. Nil = unset (default 10).
+	FailedConfigRetainCount *int                  `yaml:"failed_config_retain_count" validate:"omitempty,min=0" json:"failed_config_retain_count"`
+	Upstreams               []UpstreamConfig      `yaml:"upstreams" validate:"omitempty,dive" json:"upstreams"`
+	UpstreamOverrides       []UpstreamOverride    `yaml:"upstream_overrides" validate:"omitempty,dive" json:"upstream_overrides"`
+	Maps                    []MapConfig           `yaml:"maps" validate:"omitempty,dive" json:"maps"`
+	ProxyCaches             []CacheConfig         `yaml:"proxy_caches" validate:"omitempty,dive" json:"proxy_caches"`
+	FastcgiCaches           []CacheConfig         `yaml:"fastcgi_caches" validate:"omitempty,dive" json:"fastcgi_caches"`
+	LimitReqZones           []LimitReqZoneConfig  `yaml:"limit_req_zones" validate:"omitempty,dive" json:"limit_req_zones"`
+	LimitConnZones          []LimitConnZoneConfig `yaml:"limit_conn_zones" validate:"omitempty,dive" json:"limit_conn_zones"`
 
 	InHttpBlock string `yaml:"in_http_block" validate:"omitempty" json:"in_http_block"`
 }
