@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/md5"
 	"dokku-nginx-custom/src/pkg/file_config"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -16,12 +18,47 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"text/template"
 	"time"
 
 	"dario.cat/mergo"
+	"github.com/Masterminds/sprig/v3"
 	"github.com/gliderlabs/sigil"
 	_ "github.com/gliderlabs/sigil/builtin"
 )
+
+// Names registered by github.com/gliderlabs/sigil/builtin. Kept so sprig does not
+// overwrite existing template behavior for overlapping function names.
+var sigilBuiltinFuncNames = []string{
+	"include", "default", "var",
+	"capitalize", "lower", "upper", "replace", "trim", "indent", "match", "render", "stdin", "substr",
+	"base64enc", "base64dec",
+	"file", "exists", "dir", "dirs", "files", "text",
+	"sh", "httpget",
+	"pointer", "json", "jmespath", "tojson", "yaml", "toyaml",
+	"uniq", "drop", "append", "seq", "join", "joinkv", "split", "splitkv",
+}
+
+// md5sum returns the hex-encoded MD5 digest of input.
+// Sprig provides sha1sum/sha256sum/sha512sum but not md5 (see Masterminds/sprig#419).
+func md5sum(input string) string {
+	hash := md5.Sum([]byte(input))
+	return hex.EncodeToString(hash[:])
+}
+
+// mergeTemplateFuncs starts from sprig's text FuncMap, preserves sigil builtins on
+// name conflicts, then overlays project-specific funcs (which win last).
+func mergeTemplateFuncs(custom template.FuncMap) template.FuncMap {
+	funcs := sprig.TxtFuncMap()
+	for _, name := range sigilBuiltinFuncNames {
+		delete(funcs, name)
+	}
+	funcs["md5sum"] = md5sum
+	for name, fn := range custom {
+		funcs[name] = fn
+	}
+	return funcs
+}
 
 var environs []string
 
@@ -1380,7 +1417,7 @@ func main() {
 	}
 	fmt.Printf("[VARDEBUG] addHeaderMode=%s\n", addHeaderMode)
 
-	tmplFuncs := map[string]any{
+	tmplFuncs := mergeTemplateFuncs(template.FuncMap{
 		"nginx_add_header": func(header string, value string) string {
 			if addHeaderMode == "add_header" {
 				return fmt.Sprintf("add_header %s %s always;", header, value)
@@ -1458,7 +1495,7 @@ func main() {
 			}
 			return out.String(), nil
 		},
-	}
+	})
 	sigil.Register(tmplFuncs)
 
 	DOKKU_APP_LISTENERS := strings.TrimSpace(os.Getenv("DOKKU_APP_LISTENERS"))
