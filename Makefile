@@ -40,3 +40,9 @@ clean:
 list-commands:
 	@echo "Available commands:"
 	@echo $(AVAILABLE_COMMANDS) | tr ' ' '\n' | sed 's/^/  /'
+
+atlas-generate:
+	python3 scripts/atlas/generate_atlas.py --write
+
+atlas-check:
+	python3 scripts/atlas/generate_atlas.py --check

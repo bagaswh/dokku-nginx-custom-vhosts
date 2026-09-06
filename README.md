@@ -1,111 +1,179 @@
-# Dokku NGINX Path-Based VHOSTS Plugin
+# Dokku NGINX Custom Config Plugin (`nginx-custom`)
 
-A Dokku plugin that allows multiple applications to be served under a single domain, distinguished by URL paths (e.g., `example.com/app1`, `example.com/app2`).
+A Dokku proxy plugin that replaces Dokku's built-in `nginx-vhosts` proxy with a
+YAML-driven NGINX config renderer.
 
-This plugin automates the NGINX configuration, including the creation of server blocks and upstream definitions for path-based routing. It centrally manages the configuration through a designated "default app" for each root domain.
+Instead of Dokku generating a vhost from `DOKKU_APP_HOST`/ports, each app ships
+its **own YAML config file inside its image**, declaring vhosts, upstreams,
+maps, caches, and rate/connection limit zones. This plugin copies that file
+out at build time, renders it into NGINX config with a Go builder (using
+[sigil](https://github.com/gliderlabs/sigil) + [Sprig](https://masterminds.github.io/sprig/)
+templating for dynamic values), and writes it to an **immutable, versioned
+release directory** with a `current` symlink. If `nginx -t` fails on the new
+release, the plugin automatically rolls back to the last good release (or
+removes `current` on a first deploy) and quarantines the broken one — see
+[`docs/spec-auto-rollback.md`](docs/spec-auto-rollback.md).
 
 ## Features
 
--   **Path-Based Routing**: Host multiple Dokku apps on one domain.
--   **Automatic NGINX Configuration**: Automatically generates and manages NGINX configurations.
--   **Default App Concept**: Designate one app to handle requests to the root of the domain (`/`).
--   **Highly Configurable**: Control various NGINX properties like timeouts, log paths, and proxy settings via Dokku commands.
--   **Custom Templates**: Supports custom `nginx.conf.sigil` for full control over the NGINX configuration.
+- **YAML-as-config**: vhosts, locations, upstreams, maps, proxy/FastCGI
+  caches, and `limit_req`/`limit_conn` zones are all declared in one YAML file
+  per app — no hand-edited NGINX config.
+- **Templated values**: any string field in the YAML (location bodies,
+  upstream flags, map lines, ...) is rendered with sigil/Sprig, with access to
+  container listeners, labels, mounts, and user-defined variables.
+- **Upstreams from Dokku**: upstream servers are generated from the app's
+  running containers (`ip` or `dns` address mode), with optional
+  `upstream_overrides` to tweak directives/flags on the generated upstream.
+- **Immutable releases + auto-rollback**: every `proxy:build-config` allocates
+  a new `release-YYYYMMDD.N` directory, flips `current`, and runs `nginx -t`;
+  a failing release is rolled back and quarantined automatically (configurable
+  per app, per YAML, or globally).
+- **Cache management**: `proxy_caches`/`fastcgi_caches` with optional
+  `purge_on_deploy`, purged via a dedicated Go binary on every deploy.
+- **Configurable via Dokku properties**: cache paths, log directories, retain
+  counts, rollback behavior, and the restart/test commands can all be set
+  per-app or `--global` with `dokku nginx-custom:set`.
 
 ## Installation
 
 ```shell
-sudo dokku plugin:install [https://github.com/szuryuu/nginx-custom-vhost.git](https://github.com/szuryuu/nginx-custom-vhost.git) nginx-custom-vhost
+sudo dokku plugin:install https://github.com/szuryuu/nginx-custom-vhost.git nginx-custom-vhost
 ```
 
 ---
 
-## Example Workflow
+## Workflow
 
-Here is a step-by-step example of how to set up two apps, `main-app` and `api-app`, to be served under `example.com`.
+#### 1. Author a YAML config file in your app's repo
 
--   `main-app` will be accessible at `http://example.com/`
--   `api-app` will be accessible at `http://example.com/api`
+For example, `nginx-config.yaml` at the root of your app repo. See
+[`src/pkg/file_config/testdata/example.yaml`](src/pkg/file_config/testdata/example.yaml)
+for a fully annotated example covering every field, and
+[Config file schema](#config-file-schema) below for a summary.
 
-#### 1. Set the Proxy Type for Each App
-
-First, tell Dokku to use this plugin to manage web traffic for both apps.
-
-```shell
-dokku proxy:set main-app nginx-custom
-dokku proxy:set api-app nginx-custom
-```
-
-#### 2. Configure Routing Properties
-
-Now, configure the domain and paths for each application.
+#### 2. Set the proxy type
 
 ```shell
-# Set the same root-domain for both apps
-dokku nginx-custom:set main-app root-domain example.com
-dokku nginx-custom:set api-app root-domain example.com
-
-# Set the unique path for the secondary app
-dokku nginx-custom:set api-app app-path api
-
-# Designate the main app as the "default-app"
-# Note: The default app handles requests to the root path ("/") and does not need an app-path.
-dokku nginx-custom:set main-app default-app main-app
+dokku proxy:set my-app nginx-custom
 ```
 
-#### 3. Build the NGINX Configuration
+#### 3. Point the plugin at your config file
 
-Finally, build the NGINX configuration. This command must be run on the **default app**, as it controls the master configuration file for the domain.
+`config-file` is the path to the YAML file **inside the app's repo/image**
+(relative paths are resolved by `git`/the image's `copy_from_image`).
 
 ```shell
-dokku proxy:build-config main-app
+dokku nginx-custom:set my-app config-file nginx-config.yaml
 ```
 
-Your applications should now be accessible at their configured paths.
+#### 4. Set required global properties (once, before the first deploy)
+
+`pre-build` fails the deploy if any of these are unset:
+
+```shell
+dokku nginx-custom:set --global proxy-cache-on-disk-root-path /var/lib/nginx/cache/proxy-on-disk
+dokku nginx-custom:set --global proxy-cache-in-mem-root-path /var/lib/nginx/cache/proxy-in-mem
+dokku nginx-custom:set --global fastcgi-cache-on-disk-root-path /var/lib/nginx/cache/fastcgi-on-disk
+dokku nginx-custom:set --global fastcgi-cache-in-mem-root-path /var/lib/nginx/cache/fastcgi-in-mem
+dokku nginx-custom:set --global proxy-cache-default-key-zone-size 64m
+dokku nginx-custom:set --global fastcgi-cache-default-key-zone-size 64m
+dokku nginx-custom:set --global nginx-access-log-root-dir /var/log/nginx
+dokku nginx-custom:set --global nginx-error-log-root-dir /var/log/nginx
+```
+
+#### 5. Deploy
+
+```shell
+git push dokku main
+```
+
+This triggers, in order: `post-extract` (copies the YAML file out of the built
+image), `pre-build` (checks the properties above are set), and on a
+successful deploy, `post-deploy` → `proxy:build-config` (renders the config,
+runs `nginx -t`, flips `current`) then purges any caches marked
+`purge_on_deploy: true`.
+
+You can also trigger a re-render manually without a new deploy:
+
+```shell
+dokku proxy:build-config my-app
+```
+
+---
+
+## Config file schema
+
+The YAML file is validated strictly — required fields fail the build with a
+readable error (e.g. `In vhosts #0: field 'ServerName' is required`). Top-level
+keys:
+
+| Key | Purpose |
+|---|---|
+| `vhosts` | List of server blocks: `server_name`, `additional_server_names`, `locations`, `variables`, `in_server_block`. |
+| `upstreams` | Named upstream server lists, or a selector (`select_process_type`) into upstreams generated from the app's Dokku listeners. |
+| `upstream_overrides` | Attach extra directives/flags/zone to a generated (listener-based) upstream, selected by `select_process_type` + `select_port`. |
+| `maps` | `map` blocks (`variable`, `string`, `lines`), namespaced per app. |
+| `proxy_caches` / `fastcgi_caches` | Cache zones (`in_mem` or `on_disk`), optionally `purge_on_deploy`. |
+| `limit_req_zones` / `limit_conn_zones` | `limit_req_zone`/`limit_conn_zone` definitions — all fields required, no silent defaults (see [`docs/spec-limit-zones.md`](docs/spec-limit-zones.md)). |
+| `user_vars` | Arbitrary variables available to templated strings as `.vars.*`. |
+| `upstream_address_mode` | `ip` (default) or `dns` — how upstream servers are resolved from containers. |
+| `auto_rollback` | Override the `auto-rollback` property for this app (default `true`). |
+| `old_config_retain_count` / `failed_config_retain_count` | Override the retain-count properties for this app (default `10` each). |
+| `in_http_block` | Raw snippet injected into the `http` context for this app. |
+
+Precedence for the overridable fields above is **YAML value > global property
+> built-in default**.
 
 ---
 
 ## Commands
 
-Here is a reference for the available commands.
-
-#### Proxy Management
-| Action | Command |
+| Command | Description |
 |---|---|
-| **Set Proxy Type** | `dokku proxy:set <app_name> nginx-custom` |
-| **Build Config** | `dokku proxy:build-config <default_app_name>` |
+| `dokku nginx-custom:set <app\|--global> <property> [<value>]` | Set a property; omit `<value>` to unset it. |
+| `dokku nginx-custom:get <app> <property>` | Read a property (empty output if unset). |
+| `dokku proxy:build-config <app>` | Render this app's NGINX config from its YAML and reload NGINX. |
+| `dokku nginx-custom:help` | List available subcommands. |
 
-#### Routing Configuration
-| Property | Command |
-|---|---|
-| **`app-path`** | `dokku nginx-custom:set <app_name> app-path <path>` |
-| **`root-domain`** | `dokku nginx-custom:set <app_name> root-domain <domain>` |
-| **`default-app`** | `dokku nginx-custom:set <app_name> default-app <app_name>` |
-| **Unset a property** | `dokku nginx-custom:set <app_name> default-app` |
+> **Note:** `nginx-custom:help` also lists `report`, `show-config`,
+> `validate-config`, `access-logs`, `error-logs`, `start`, and `stop`. These
+> are not implemented yet in this version of the plugin — running them will
+> error out rather than do anything useful.
 
-#### Troubleshooting & Inspection
-| Action | Command | Notes |
-|---|---|---|
-| **Check a Property** | `dokku nginx-custom:get <app_name> default-app` | If the property is set, it returns the value. Otherwise, it returns empty. |
-| **Validate Config** | `dokku nginx-custom:validate-config` | An empty return means the configuration is valid. |
-| **View App Report** | `dokku nginx-custom:report <app_name>` | Shows a detailed report of all NGINX properties for the app. |
-| **Show NGINX Config** | `dokku nginx-custom:show-config <app_name>` | Only works for the `default-app`, as it holds the master config file. |
-| **View Access Logs**| `dokku nginx-custom:access-logs <app_name> -t` | |
-| **View Error Logs** | `dokku nginx-custom:error-logs <app_name> -t` | |
+## Properties reference
+
+Set with `dokku nginx-custom:set [--global] <app> <property> <value>`.
+
+| Property | Scope | Default | Notes |
+|---|---|---|---|
+| `config-file` | app/global | *(none — required)* | Path to the app's YAML config file inside its repo/image. |
+| `config-file-mode` | app/global | `0644` | File mode used when writing the copied-out config file. |
+| `config-file-owner-uid` / `config-file-owner-gid` | app/global | Dokku system user's uid/gid | Ownership of the copied-out config file. |
+| `add-header-mode` | app/global | `add_header` | Directive used by the `nginx_add_header` template helper. |
+| `upstream-address-mode` | global | `ip` | Fallback when the YAML doesn't set `upstream_address_mode`. |
+| `old-config-retain-count` | global | `10` | Fallback when the YAML doesn't set `old_config_retain_count`. |
+| `failed-config-retain-count` | global | `10` | Fallback when the YAML doesn't set `failed_config_retain_count`. |
+| `auto-rollback` | global | `true` | Fallback when the YAML doesn't set `auto_rollback`. |
+| `proxy-cache-on-disk-root-path` / `proxy-cache-in-mem-root-path` | global | *(required)* | Root paths for `proxy_caches` with `on_disk`/`in_mem`. |
+| `fastcgi-cache-on-disk-root-path` / `fastcgi-cache-in-mem-root-path` | global | *(required)* | Root paths for `fastcgi_caches` with `on_disk`/`in_mem`. |
+| `proxy-cache-default-key-zone-size` / `fastcgi-cache-default-key-zone-size` | global | *(required)* | Default `keys_zone` size when a cache doesn't set one. |
+| `proxy-cache-default-flags` / `fastcgi-cache-default-flags` | global | *(none)* | Default flags applied to caches that don't set their own. |
+| `nginx-access-log-root-dir` / `nginx-error-log-root-dir` | global | *(required)* | Root directories for per-app access/error logs. |
+| `nginx-default-access-log-format` | global | *(nginx default)* | Access log format name. |
+| `nginx-purge-cache-command` | global | *(built-in purge logic)* | Custom command to purge caches instead of the built-in purger. |
+| `nginx-restart-command` | global | `systemctl reload nginx` (or `openresty`) | Command used to reload NGINX; run via `eval`, so treat as trusted input. |
+| `nginx-restart-command-run-with-sudo` | global | `true` | Whether the restart command above is run with `sudo`. |
+| `nginx-test-command` | global | `sudo nginx -t` (or `openresty -t`) | Command used to validate a rendered release before flipping `current`. |
+| `data-dir` | app | `${DOKKU_LIB_ROOT}/data` | Overrides where this plugin stores per-app config/release data. |
 
 ---
 
-## Configuration Properties
+## Further reading
 
-You can customize NGINX behavior using the `nginx-custom:set` command. Properties can be set per-app or globally using the `--global` flag.
-
-**Example:**
-```shell
-# Set the max client body size for a single app
-dokku nginx-custom:set my-app client-max-body-size 10m
-
-# Set the proxy read timeout globally for all apps using this plugin
-dokku nginx-custom:set --global proxy-read-timeout 120s
-```
-
-For a full list of configurable properties, see the `src/nginx-property/nginx_vhosts.go` file in this repository.
+- [`docs/spec-auto-rollback.md`](docs/spec-auto-rollback.md) — release
+  lifecycle and automatic rollback/quarantine design.
+- [`docs/spec-limit-zones.md`](docs/spec-limit-zones.md) — `limit_req`/`limit_conn`
+  zone design.
+- [`docs/atlas/`](docs/atlas/) — deeper architecture, domain model, and
+  gotchas for anyone modifying the plugin itself.
