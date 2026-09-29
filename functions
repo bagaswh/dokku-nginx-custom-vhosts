@@ -114,7 +114,13 @@ get_app_listeners_json() {
   for process_type in $PROCESS_TYPES; do
     local listeners=""
     if [[ "$UPSTREAM_ADDRESS_MODE" == "ip" ]]; then
-      listeners="$(plugn trigger network-get-listeners "$APP" "$process_type" | xargs)"
+      # post-deploy can run before the new container IP is published
+      local attempt
+      for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+        listeners="$(plugn trigger network-get-listeners "$APP" "$process_type" | xargs)"
+        [[ -n "$listeners" ]] && break
+        sleep 1
+      done
     else
       containers="$(app_containers_get "$APP" "$process_type")"
       for container in $containers; do
@@ -168,6 +174,55 @@ get_upstream_ports() {
     echo "$PROXY_UPSTREAM_PORTS" | xargs
 }
 
+# First deploy has no running container, but docker-options already lists
+# the volumes nginx templates resolve with container_mount_source_abs.
+nginx_custom_mounts_from_docker_options() {
+  declare desc="build container mount JSON from docker-options when no container is running"
+  declare APP="$1"
+  local line spec part typ src dst source_path mounts_json first parts options_file lib_root
+  lib_root="${DOKKU_LIB_ROOT:-/var/lib/dokku}"
+  options_file="${lib_root}/config/docker-options/${APP}/_default_.run"
+  if [[ ! -f "$options_file" && -f "/var/lib/dokku/config/docker-options/${APP}/_default_.run" ]]; then
+    options_file="/var/lib/dokku/config/docker-options/${APP}/_default_.run"
+  fi
+  [[ -f "$options_file" ]] || {
+    printf '%s\n' "[]"
+    return 0
+  }
+  mounts_json="["
+  first=1
+  while IFS= read -r line; do
+    [[ "$line" == --mount\ * ]] || continue
+    spec="${line#--mount }"
+    typ="volume"
+    src=""
+    dst=""
+    IFS=',' read -ra parts <<< "$spec"
+    for part in "${parts[@]}"; do
+      case "$part" in
+        type=*) typ="${part#type=}" ;;
+        src=*|source=*) src="${part#*=}" ;;
+        dst=*|destination=*|target=*) dst="${part#*=}" ;;
+      esac
+    done
+    [[ -n "$dst" && -n "$src" ]] || continue
+    dst="${dst%/}"
+    [[ -z "$dst" ]] && dst="/"
+    source_path="$src"
+    if [[ "$typ" == "volume" ]]; then
+      source_path="$(docker volume inspect --format '{{.Mountpoint}}' "$src" 2>/dev/null || true)"
+      [[ -n "$source_path" ]] || continue
+    fi
+    if [[ "$first" -eq 0 ]]; then
+      mounts_json+=","
+    fi
+    first=0
+    mounts_json+="$(printf '{"Type":"%s","Source":"%s","Destination":"%s","Mode":"","RW":true,"Propagation":""}' "$typ" "$source_path" "$dst")"
+  done < "$options_file"
+  mounts_json+="]"
+  printf '%s\n' "$mounts_json"
+}
+
 # Do not call this except after the containers are running
 # since it will try to inspect the running containers
 nginx_build_config() {
@@ -204,9 +259,9 @@ nginx_build_config() {
     export DOKKU_APP_CONTAINER_DETAILS="$(container_inspect "$container")"
     echo "DOKKU_APP_CONTAINER_DETAILS: $DOKKU_APP_CONTAINER_DETAILS"
   else
-    dokku_log_info1 "No running container for $APP; building nginx config without container listeners/metadata (static-only mode)"
+    dokku_log_info1 "No running container for $APP; building nginx config from docker-options mounts"
     export DOKKU_APP_CONTAINER_LABELS="{}"
-    export DOKKU_APP_CONTAINER_MOUNTS="[]"
+    export DOKKU_APP_CONTAINER_MOUNTS="$(nginx_custom_mounts_from_docker_options "$APP")"
     export DOKKU_APP_CONTAINER_DETAILS="{}"
   fi
   export DOKKU_APP_LISTENERS
